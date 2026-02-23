@@ -49,7 +49,89 @@ export default function PlanningPage() {
 
   useEffect(() => {
     loadPlanningForDate();
+    checkAndMoveUncompletedItems();
   }, [selectedDate]);
+
+  async function checkAndMoveUncompletedItems() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const vandaag = new Date();
+      vandaag.setHours(0, 0, 0, 0);
+      
+      const gisteren = new Date(vandaag);
+      gisteren.setDate(gisteren.getDate() - 1);
+      const gisterenString = gisteren.toISOString().split('T')[0];
+      const vandaagString = vandaag.toISOString().split('T')[0];
+
+      // Alleen doorschuiven als we VANDAAG bekijken
+      if (selectedDate.toISOString().split('T')[0] !== vandaagString) {
+        return;
+      }
+
+      // Haal onafgevinkte items van gisteren op
+      const { data: gisterenItems, error: gisterenError } = await supabase
+        .from('planning_items')
+        .select('*')
+        .eq('datum', gisterenString)
+        .eq('voltooid', false);
+
+      if (gisterenError || !gisterenItems || gisterenItems.length === 0) {
+        return;
+      }
+
+      // Check of deze items al bestaan in vandaag (voorkomen duplicaten)
+      const { data: vandaagItems } = await supabase
+        .from('planning_items')
+        .select('id, toets_onderdeel_id, huiswerk_id')
+        .eq('datum', vandaagString);
+
+      const bestaandeKeys = new Set(
+        vandaagItems?.map(item => 
+          item.toets_onderdeel_id || item.huiswerk_id || item.id
+        ) || []
+      );
+
+      // Kopieer onafgevinkte items naar vandaag (als ze nog niet bestaan)
+      const teKopieren = gisterenItems.filter(item => {
+        const key = item.toets_onderdeel_id || item.huiswerk_id || item.id;
+        return !bestaandeKeys.has(key);
+      });
+
+      if (teKopieren.length === 0) {
+        return;
+      }
+
+      const nieuweItems = teKopieren.map(item => ({
+        user_id: item.user_id,
+        toets_id: item.toets_id,
+        toets_onderdeel_id: item.toets_onderdeel_id,
+        huiswerk_id: item.huiswerk_id,
+        datum: vandaagString,
+        type: item.type,
+        beschrijving: `🔄 ${item.beschrijving}`, // Emoji om te tonen dat het doorgeschoven is
+        geschatte_tijd: item.geschatte_tijd,
+        hoofdstuk_nummers: item.hoofdstuk_nummers,
+        woorden_van: item.woorden_van,
+        woorden_tot: item.woorden_tot,
+        opgaven_van: item.opgaven_van,
+        opgaven_tot: item.opgaven_tot,
+        voltooid: false,
+      }));
+
+      const { error: insertError } = await supabase
+        .from('planning_items')
+        .insert(nieuweItems);
+
+      if (!insertError) {
+        // Reload planning om de nieuwe items te tonen
+        await loadPlanningForDate();
+      }
+    } catch (error) {
+      console.error('Error moving uncompleted items:', error);
+    }
+  }
 
   async function loadUser() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -439,7 +521,25 @@ export default function PlanningPage() {
                           <div className="flex items-center gap-4 text-sm text-gray-600">
                             <span>⏱️ {item.geschatte_tijd} min</span>
                             {item.toets && (
-                              <span>📅 Toets: {new Date(item.toets.datum).toLocaleDateString('nl-NL')}</span>
+                              <span>
+                                📅 Toets: {new Date(item.toets.datum).toLocaleDateString('nl-NL')}
+                                {(() => {
+                                  const toetsDatum = new Date(item.toets.datum);
+                                  toetsDatum.setHours(0, 0, 0, 0);
+                                  const vandaag = new Date();
+                                  vandaag.setHours(0, 0, 0, 0);
+                                  const dagenTot = Math.ceil((toetsDatum.getTime() - vandaag.getTime()) / (1000 * 60 * 60 * 24));
+                                  
+                                  if (dagenTot === 0) {
+                                    return ' (vandaag!)';
+                                  } else if (dagenTot === 1) {
+                                    return ' (morgen)';
+                                  } else if (dagenTot > 1) {
+                                    return ` (nog ${dagenTot} dagen)`;
+                                  }
+                                  return '';
+                                })()}
+                              </span>
                             )}
                             {item.huiswerk && (
                               <span>📅 Deadline: {new Date(item.huiswerk.deadline).toLocaleDateString('nl-NL')}</span>
