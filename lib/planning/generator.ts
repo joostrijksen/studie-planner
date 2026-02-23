@@ -80,13 +80,27 @@ export class PlanningGenerator {
     const toetsDatum = new Date(toets.datum);
     toetsDatum.setHours(0, 0, 0, 0);
 
-    // Bereken beschikbare dagen
-    const beschikbareDagen = this.getBeschikbareDagen(vandaag, toetsDatum);
+    // Bereken ALLE beschikbare dagen tot toets
+    const alleBeschikbareDagen = this.getBeschikbareDagen(vandaag, toetsDatum);
     
-    if (beschikbareDagen.length === 0) {
+    if (alleBeschikbareDagen.length === 0) {
       console.warn('Geen beschikbare dagen voor planning');
       return items;
     }
+
+    // Bereken totale studielast voor deze toets
+    const totaleStudieTijd = this.berekenTotaleStudieTijd(toets.onderdelen);
+    
+    // Bereken ideale aantal dagen nodig (max 2 uur per dag)
+    const maxTijdPerDag = 120; // minuten
+    const idealeDagen = Math.ceil(totaleStudieTijd / maxTijdPerDag);
+    
+    // Bereken wanneer we moeten starten
+    // Als we meer dagen hebben dan nodig, start later
+    const dagenNodig = Math.min(idealeDagen + 2, alleBeschikbareDagen.length); // +2 voor buffer
+    const startIndex = Math.max(0, alleBeschikbareDagen.length - dagenNodig);
+    
+    const beschikbareDagen = alleBeschikbareDagen.slice(startIndex);
 
     // Reserveer laatste dagen voor herhaling
     const bufferDagen = Math.min(this.instellingen.buffer_dagen, Math.floor(beschikbareDagen.length * 0.3));
@@ -105,6 +119,45 @@ export class PlanningGenerator {
     }
 
     return items;
+  }
+
+  /**
+   * Bereken totale geschatte studietijd
+   */
+  private berekenTotaleStudieTijd(onderdelen: ToetsOnderdeel[]): number {
+    let totaal = 0;
+    
+    for (const onderdeel of onderdelen) {
+      if (onderdeel.geschatte_tijd) {
+        totaal += onderdeel.geschatte_tijd;
+      } else {
+        // Schat tijd op basis van type
+        switch (onderdeel.type) {
+          case 'hoofdstukken':
+            const aantalH = onderdeel.aantal_hoofdstukken || onderdeel.hoofdstukken?.length || 1;
+            totaal += aantalH * 45;
+            break;
+          case 'woordjes':
+            totaal += Math.ceil((onderdeel.aantal_woorden || 50) / 25) * 20;
+            break;
+          case 'opgaven':
+            const aantalOpg = (onderdeel.opgaven_tot || 0) - (onderdeel.opgaven_van || 0) + 1;
+            totaal += Math.ceil(aantalOpg / 10) * 40;
+            break;
+          case 'grammatica':
+            totaal += (onderdeel.grammatica_onderwerpen?.length || 1) * 30;
+            break;
+          case 'formules':
+            totaal += (onderdeel.aantal_formules || 5) * 5;
+            break;
+          case 'tekst':
+            totaal += (onderdeel.aantal_paginas || 10) * 2;
+            break;
+        }
+      }
+    }
+    
+    return totaal;
   }
 
   /**
@@ -506,6 +559,7 @@ export class PlanningGenerator {
 
   /**
    * Bereken beschikbare dagen tussen vandaag en toetsdatum
+   * Weekend dagen krijgen lagere prioriteit
    */
   private getBeschikbareDagen(van: Date, tot: Date): Date[] {
     const dagen: Date[] = [];
@@ -523,6 +577,24 @@ export class PlanningGenerator {
     }
 
     return dagen;
+  }
+
+  /**
+   * Check of datum een weekend dag is
+   */
+  private isWeekend(datum: Date): boolean {
+    return datum.getDay() === 0 || datum.getDay() === 6;
+  }
+
+  /**
+   * Bereken max capaciteit voor een dag (rekening houdend met weekend)
+   */
+  private getMaxCapaciteitVoorDag(datum: Date): number {
+    if (this.isWeekend(datum)) {
+      // Op weekend: halve capaciteit
+      return Math.floor(this.instellingen.standaard_studietijd_per_dag / 2);
+    }
+    return this.instellingen.standaard_studietijd_per_dag;
   }
 
   /**
