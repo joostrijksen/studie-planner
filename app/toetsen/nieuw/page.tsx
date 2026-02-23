@@ -10,11 +10,17 @@ type Vak = {
   kleur: string;
 };
 
+type Hoofdstuk = {
+  naam: string;
+  pagina_van?: number;
+  pagina_tot?: number;
+};
+
 type ToetsOnderdeel = {
   type: 'hoofdstukken' | 'woordjes' | 'opgaven' | 'grammatica' | 'formules' | 'tekst';
   beschrijving?: string;
   // Hoofdstukken
-  hoofdstukken?: Array<{ naam: string; paginas?: number }>;
+  hoofdstukken?: Hoofdstuk[];
   aantal_hoofdstukken?: number;
   // Woordjes
   aantal_woorden?: number;
@@ -38,7 +44,7 @@ type ToetsOnderdeel = {
 type DetailFormData = {
   // Hoofdstukken
   invoerType?: 'gedetailleerd' | 'simpel';
-  hoofdstukkenLijst?: string; // Voor gedetailleerde invoer (1 per regel)
+  hoofdstukkenLijst?: Hoofdstuk[]; // Array van hoofdstukken met pagina's
   aantalHoofdstukken?: number;
   // Woordjes
   aantalWoorden?: number;
@@ -99,11 +105,6 @@ export default function NieuweToetsPage() {
     }
   }
 
-  function handleAddOnderdeel() {
-    if (!selectedType) return;
-    setCurrentStep('details');
-  }
-
   function handleSaveOnderdeel() {
     if (!selectedType) return;
 
@@ -115,11 +116,7 @@ export default function NieuweToetsPage() {
     switch (selectedType) {
       case 'hoofdstukken':
         if (detailForm.invoerType === 'gedetailleerd' && detailForm.hoofdstukkenLijst) {
-          const hoofdstukken = detailForm.hoofdstukkenLijst
-            .split('\n')
-            .filter(h => h.trim())
-            .map(h => ({ naam: h.trim() }));
-          nieuwOnderdeel.hoofdstukken = hoofdstukken;
+          nieuwOnderdeel.hoofdstukken = detailForm.hoofdstukkenLijst;
         } else if (detailForm.aantalHoofdstukken) {
           nieuwOnderdeel.aantal_hoofdstukken = detailForm.aantalHoofdstukken;
         }
@@ -160,17 +157,14 @@ export default function NieuweToetsPage() {
     nieuwOnderdeel.geschatte_tijd = detailForm.geschatteTijd;
 
     if (editingIndex !== null) {
-      // Update bestaand onderdeel
       const updated = [...onderdelen];
       updated[editingIndex] = nieuwOnderdeel;
       setOnderdelen(updated);
       setEditingIndex(null);
     } else {
-      // Nieuw onderdeel toevoegen
       setOnderdelen([...onderdelen, nieuwOnderdeel]);
     }
 
-    // Reset formulier
     setSelectedType('');
     setDetailForm({});
     setCurrentStep('kies-type');
@@ -188,14 +182,13 @@ export default function NieuweToetsPage() {
     setSelectedType(onderdeel.type);
     setEditingIndex(index);
     
-    // Vul formulier met bestaande data
     const formData: DetailFormData = {};
     
     switch (onderdeel.type) {
       case 'hoofdstukken':
         if (onderdeel.hoofdstukken && onderdeel.hoofdstukken.length > 0) {
           formData.invoerType = 'gedetailleerd';
-          formData.hoofdstukkenLijst = onderdeel.hoofdstukken.map(h => h.naam).join('\n');
+          formData.hoofdstukkenLijst = onderdeel.hoofdstukken;
         } else if (onderdeel.aantal_hoofdstukken) {
           formData.invoerType = 'simpel';
           formData.aantalHoofdstukken = onderdeel.aantal_hoofdstukken;
@@ -245,7 +238,6 @@ export default function NieuweToetsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Toets opslaan
       const { data: toets, error: toetsError } = await supabase
         .from('toetsen')
         .insert({
@@ -259,7 +251,6 @@ export default function NieuweToetsPage() {
 
       if (toetsError) throw toetsError;
 
-      // Onderdelen opslaan
       const onderdelenData = onderdelen.map(od => ({
         toets_id: toets.id,
         type: od.type,
@@ -285,7 +276,6 @@ export default function NieuweToetsPage() {
 
       if (onderdelenError) throw onderdelenError;
 
-      // Genereer planning automatisch
       const { PlanningService } = await import('@/lib/planning/service');
       const planningGenerated = await PlanningService.generateAndSavePlanning(toets.id, user.id);
 
@@ -300,11 +290,6 @@ export default function NieuweToetsPage() {
     }
   }
 
-  if (loading) {
-    return <div className="min-h-screen flex items-center justify-center">Laden...</div>;
-  }
-
-  // Render detail formulier op basis van type
   function renderDetailForm() {
     if (!selectedType) return null;
 
@@ -321,12 +306,7 @@ export default function NieuweToetsPage() {
       <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold">{typeLabels[selectedType]}</h2>
-          <button
-            onClick={handleCancelDetail}
-            className="text-gray-600 hover:text-gray-900"
-          >
-            ✕
-          </button>
+          <button onClick={handleCancelDetail} className="text-gray-600 hover:text-gray-900">✕</button>
         </div>
 
         {selectedType === 'hoofdstukken' && (
@@ -335,22 +315,18 @@ export default function NieuweToetsPage() {
               <label className="block text-sm font-medium mb-2">Hoe wil je invoeren?</label>
               <div className="flex gap-4">
                 <button
-                  onClick={() => setDetailForm({ ...detailForm, invoerType: 'gedetailleerd' })}
+                  onClick={() => setDetailForm({ ...detailForm, invoerType: 'gedetailleerd', hoofdstukkenLijst: [{ naam: '' }] })}
                   className={`flex-1 p-4 border-2 rounded-lg ${
-                    detailForm.invoerType === 'gedetailleerd'
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-300'
+                    detailForm.invoerType === 'gedetailleerd' ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
                   }`}
                 >
                   <div className="font-semibold">Gedetailleerd</div>
-                  <div className="text-sm text-gray-600">Lijst van hoofdstukken</div>
+                  <div className="text-sm text-gray-600">Met pagina nummers</div>
                 </button>
                 <button
                   onClick={() => setDetailForm({ ...detailForm, invoerType: 'simpel' })}
                   className={`flex-1 p-4 border-2 rounded-lg ${
-                    detailForm.invoerType === 'simpel'
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-300'
+                    detailForm.invoerType === 'simpel' ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
                   }`}
                 >
                   <div className="font-semibold">Snel</div>
@@ -360,17 +336,69 @@ export default function NieuweToetsPage() {
             </div>
 
             {detailForm.invoerType === 'gedetailleerd' && (
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Hoofdstukken (1 per regel)
-                </label>
-                <textarea
-                  value={detailForm.hoofdstukkenLijst || ''}
-                  onChange={(e) => setDetailForm({ ...detailForm, hoofdstukkenLijst: e.target.value })}
-                  placeholder="Hoofdstuk 1: De Koude Oorlog&#10;Hoofdstuk 2: Dekolonisatie&#10;Hoofdstuk 3: Europa na 1945"
-                  rows={6}
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
+              <div className="space-y-3">
+                <label className="block text-sm font-medium">Hoofdstukken</label>
+                {(detailForm.hoofdstukkenLijst || []).map((h, idx) => (
+                  <div key={idx} className="flex gap-3 items-start p-4 bg-gray-50 rounded-lg">
+                    <div className="flex-1 space-y-2">
+                      <input
+                        type="text"
+                        value={h.naam}
+                        onChange={(e) => {
+                          const updated = [...(detailForm.hoofdstukkenLijst || [])];
+                          updated[idx].naam = e.target.value;
+                          setDetailForm({ ...detailForm, hoofdstukkenLijst: updated });
+                        }}
+                        placeholder="Bijv. Hoofdstuk 1: De Koude Oorlog"
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="number"
+                          value={h.pagina_van || ''}
+                          onChange={(e) => {
+                            const updated = [...(detailForm.hoofdstukkenLijst || [])];
+                            updated[idx].pagina_van = e.target.value ? parseInt(e.target.value) : undefined;
+                            setDetailForm({ ...detailForm, hoofdstukkenLijst: updated });
+                          }}
+                          placeholder="Van pag (optioneel)"
+                          className="px-3 py-2 border rounded-lg text-sm"
+                          min="1"
+                        />
+                        <input
+                          type="number"
+                          value={h.pagina_tot || ''}
+                          onChange={(e) => {
+                            const updated = [...(detailForm.hoofdstukkenLijst || [])];
+                            updated[idx].pagina_tot = e.target.value ? parseInt(e.target.value) : undefined;
+                            setDetailForm({ ...detailForm, hoofdstukkenLijst: updated });
+                          }}
+                          placeholder="Tot pag (optioneel)"
+                          className="px-3 py-2 border rounded-lg text-sm"
+                          min="1"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const updated = (detailForm.hoofdstukkenLijst || []).filter((_, i) => i !== idx);
+                        setDetailForm({ ...detailForm, hoofdstukkenLijst: updated });
+                      }}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => {
+                    const updated = [...(detailForm.hoofdstukkenLijst || []), { naam: '' }];
+                    setDetailForm({ ...detailForm, hoofdstukkenLijst: updated });
+                  }}
+                  className="w-full px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 text-gray-600"
+                >
+                  + Hoofdstuk toevoegen
+                </button>
               </div>
             )}
 
@@ -382,13 +410,14 @@ export default function NieuweToetsPage() {
                   value={detailForm.aantalHoofdstukken || ''}
                   onChange={(e) => setDetailForm({ ...detailForm, aantalHoofdstukken: parseInt(e.target.value) })}
                   min="1"
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border rounded-lg"
                 />
               </div>
             )}
           </div>
         )}
 
+        {/* Andere types blijven hetzelfde... */}
         {selectedType === 'woordjes' && (
           <div className="space-y-4">
             <div>
@@ -399,19 +428,17 @@ export default function NieuweToetsPage() {
                 onChange={(e) => setDetailForm({ ...detailForm, aantalWoorden: parseInt(e.target.value) })}
                 min="1"
                 placeholder="Bijv. 150"
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Woordenlijst nummers (optioneel)
-              </label>
+              <label className="block text-sm font-medium mb-2">Woordenlijst nummers (optioneel)</label>
               <input
                 type="text"
                 value={detailForm.woordenlijstNummers || ''}
                 onChange={(e) => setDetailForm({ ...detailForm, woordenlijstNummers: e.target.value })}
                 placeholder="Bijv. Lijst 1 t/m 5"
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
           </div>
@@ -428,7 +455,7 @@ export default function NieuweToetsPage() {
                   onChange={(e) => setDetailForm({ ...detailForm, opgavenVan: parseInt(e.target.value) })}
                   min="1"
                   placeholder="1"
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border rounded-lg"
                 />
               </div>
               <div>
@@ -439,20 +466,18 @@ export default function NieuweToetsPage() {
                   onChange={(e) => setDetailForm({ ...detailForm, opgavenTot: parseInt(e.target.value) })}
                   min="1"
                   placeholder="45"
-                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border rounded-lg"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Paragraaf (optioneel)
-              </label>
+              <label className="block text-sm font-medium mb-2">Paragraaf (optioneel)</label>
               <input
                 type="text"
                 value={detailForm.opgavenParagraaf || ''}
                 onChange={(e) => setDetailForm({ ...detailForm, opgavenParagraaf: e.target.value })}
                 placeholder="Bijv. Paragraaf 2.3"
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
           </div>
@@ -461,15 +486,13 @@ export default function NieuweToetsPage() {
         {selectedType === 'grammatica' && (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Grammatica onderwerpen (1 per regel)
-              </label>
+              <label className="block text-sm font-medium mb-2">Grammatica onderwerpen (1 per regel)</label>
               <textarea
                 value={detailForm.grammaticaOnderwerpen || ''}
                 onChange={(e) => setDetailForm({ ...detailForm, grammaticaOnderwerpen: e.target.value })}
                 placeholder="Present perfect&#10;Past simple&#10;Conditionals"
                 rows={6}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
           </div>
@@ -485,19 +508,17 @@ export default function NieuweToetsPage() {
                 onChange={(e) => setDetailForm({ ...detailForm, aantalFormules: parseInt(e.target.value) })}
                 min="1"
                 placeholder="Bijv. 12"
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Paragrafen (optioneel)
-              </label>
+              <label className="block text-sm font-medium mb-2">Paragrafen (optioneel)</label>
               <input
                 type="text"
                 value={detailForm.formuleParagrafen || ''}
                 onChange={(e) => setDetailForm({ ...detailForm, formuleParagrafen: e.target.value })}
                 placeholder="Bijv. Paragraaf 3.1 t/m 3.4"
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
           </div>
@@ -513,19 +534,17 @@ export default function NieuweToetsPage() {
                 onChange={(e) => setDetailForm({ ...detailForm, aantalPaginas: parseInt(e.target.value) })}
                 min="1"
                 placeholder="Bijv. 45"
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">
-                Hoofdstukken / Pagina's (optioneel)
-              </label>
+              <label className="block text-sm font-medium mb-2">Hoofdstukken / Pagina's (optioneel)</label>
               <input
                 type="text"
                 value={detailForm.boekHoofdstukken || ''}
                 onChange={(e) => setDetailForm({ ...detailForm, boekHoofdstukken: e.target.value })}
                 placeholder="Bijv. Hoofdstuk 3-5 of pagina 45-92"
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
           </div>
@@ -533,7 +552,7 @@ export default function NieuweToetsPage() {
 
         <div className="mt-6">
           <label className="block text-sm font-medium mb-2">
-            Geschatte tijd (minuten, optioneel)
+            Totale geschatte tijd voor dit onderdeel (minuten, optioneel)
           </label>
           <input
             type="number"
@@ -541,7 +560,7 @@ export default function NieuweToetsPage() {
             onChange={(e) => setDetailForm({ ...detailForm, geschatteTijd: parseInt(e.target.value) })}
             min="1"
             placeholder="Bijv. 60"
-            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="w-full px-4 py-2 border rounded-lg"
           />
         </div>
 
@@ -563,15 +582,16 @@ export default function NieuweToetsPage() {
     );
   }
 
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Laden...</div>;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <button
-              onClick={() => router.push('/dashboard')}
-              className="text-gray-600 hover:text-gray-900"
-            >
+            <button onClick={() => router.push('/dashboard')} className="text-gray-600 hover:text-gray-900">
               ← Terug
             </button>
             <h1 className="text-xl font-bold">Nieuwe Toets</h1>
@@ -581,36 +601,6 @@ export default function NieuweToetsPage() {
       </nav>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Progress indicator */}
-        <div className="mb-8">
-          <div className="flex items-center justify-center gap-2">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              currentStep === 'basis' ? 'bg-blue-600 text-white' : 'bg-green-500 text-white'
-            }`}>
-              1
-            </div>
-            <div className="w-16 h-1 bg-gray-300"></div>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              currentStep === 'kies-type' ? 'bg-blue-600 text-white' : 
-              currentStep === 'details' ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-600'
-            }`}>
-              2
-            </div>
-            <div className="w-16 h-1 bg-gray-300"></div>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              currentStep === 'details' ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-600'
-            }`}>
-              3
-            </div>
-          </div>
-          <div className="flex items-center justify-center gap-8 mt-2 text-sm">
-            <span className={currentStep === 'basis' ? 'font-semibold' : 'text-gray-600'}>Basis info</span>
-            <span className={currentStep === 'kies-type' ? 'font-semibold' : 'text-gray-600'}>Type kiezen</span>
-            <span className={currentStep === 'details' ? 'font-semibold' : 'text-gray-600'}>Details</span>
-          </div>
-        </div>
-
-        {/* Stap 1: Basis informatie */}
         {currentStep === 'basis' && (
           <>
             <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
@@ -622,14 +612,12 @@ export default function NieuweToetsPage() {
                   <select
                     value={selectedVak}
                     onChange={(e) => setSelectedVak(e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border rounded-lg"
                     required
                   >
                     <option value="">Kies een vak</option>
                     {vakken.map((vak) => (
-                      <option key={vak.id} value={vak.id}>
-                        {vak.naam}
-                      </option>
+                      <option key={vak.id} value={vak.id}>{vak.naam}</option>
                     ))}
                   </select>
                 </div>
@@ -640,21 +628,19 @@ export default function NieuweToetsPage() {
                     type="date"
                     value={datum}
                     onChange={(e) => setDatum(e.target.value)}
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border rounded-lg"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-2">
-                    Titel (optioneel)
-                  </label>
+                  <label className="block text-sm font-medium mb-2">Titel (optioneel)</label>
                   <input
                     type="text"
                     value={titel}
                     onChange={(e) => setTitel(e.target.value)}
                     placeholder="Bijv. Hoofdstuk 3 toets"
-                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border rounded-lg"
                   />
                 </div>
               </div>
@@ -670,7 +656,7 @@ export default function NieuweToetsPage() {
               <button
                 onClick={() => setCurrentStep('kies-type')}
                 disabled={!selectedVak || !datum}
-                className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300"
               >
                 Volgende: Leerstof toevoegen
               </button>
@@ -678,21 +664,20 @@ export default function NieuweToetsPage() {
           </>
         )}
 
-        {/* Stap 2: Type kiezen */}
         {currentStep === 'kies-type' && (
           <>
             <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
               <h2 className="text-2xl font-bold mb-4">Wat moet je leren?</h2>
-              <p className="text-gray-600 mb-6">Kies het type leerstof en voeg details toe</p>
+              <p className="text-gray-600 mb-6">Kies het type leerstof</p>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <button
                   onClick={() => {
                     setSelectedType('hoofdstukken');
-                    setDetailForm({});
+                    setDetailForm({ invoerType: 'gedetailleerd', hoofdstukkenLijst: [{ naam: '' }] });
                     setCurrentStep('details');
                   }}
-                  className="p-4 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                  className="p-4 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 text-left"
                 >
                   <div className="text-2xl mb-2">📚</div>
                   <div className="font-semibold">Hoofdstukken / Paragrafen</div>
@@ -705,7 +690,7 @@ export default function NieuweToetsPage() {
                     setDetailForm({});
                     setCurrentStep('details');
                   }}
-                  className="p-4 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                  className="p-4 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 text-left"
                 >
                   <div className="text-2xl mb-2">📝</div>
                   <div className="font-semibold">Woordenlijst</div>
@@ -718,7 +703,7 @@ export default function NieuweToetsPage() {
                     setDetailForm({});
                     setCurrentStep('details');
                   }}
-                  className="p-4 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                  className="p-4 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 text-left"
                 >
                   <div className="text-2xl mb-2">🔢</div>
                   <div className="font-semibold">Opgaven / Oefeningen</div>
@@ -731,7 +716,7 @@ export default function NieuweToetsPage() {
                     setDetailForm({});
                     setCurrentStep('details');
                   }}
-                  className="p-4 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                  className="p-4 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 text-left"
                 >
                   <div className="text-2xl mb-2">✏️</div>
                   <div className="font-semibold">Grammatica / Regels</div>
@@ -744,7 +729,7 @@ export default function NieuweToetsPage() {
                     setDetailForm({});
                     setCurrentStep('details');
                   }}
-                  className="p-4 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                  className="p-4 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 text-left"
                 >
                   <div className="text-2xl mb-2">🧮</div>
                   <div className="font-semibold">Formules / Definities</div>
@@ -757,7 +742,7 @@ export default function NieuweToetsPage() {
                     setDetailForm({});
                     setCurrentStep('details');
                   }}
-                  className="p-4 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                  className="p-4 border-2 rounded-lg hover:border-blue-500 hover:bg-blue-50 text-left"
                 >
                   <div className="text-2xl mb-2">📖</div>
                   <div className="font-semibold">Tekst / Literatuur</div>
@@ -766,7 +751,6 @@ export default function NieuweToetsPage() {
               </div>
             </div>
 
-            {/* Toegevoegde onderdelen */}
             {onderdelen.length > 0 && (
               <div className="bg-white rounded-xl shadow-sm border p-6 mb-6">
                 <h3 className="text-xl font-bold mb-4">Toegevoegde onderdelen ({onderdelen.length})</h3>
@@ -777,6 +761,9 @@ export default function NieuweToetsPage() {
                         <span className="font-medium capitalize">{od.type.replace('_', ' ')}</span>
                         {od.type === 'hoofdstukken' && od.aantal_hoofdstukken && (
                           <span className="text-gray-600 ml-2">({od.aantal_hoofdstukken} hoofdstukken)</span>
+                        )}
+                        {od.type === 'hoofdstukken' && od.hoofdstukken && (
+                          <span className="text-gray-600 ml-2">({od.hoofdstukken.length} hoofdstukken)</span>
                         )}
                         {od.type === 'woordjes' && od.aantal_woorden && (
                           <span className="text-gray-600 ml-2">({od.aantal_woorden} woorden)</span>
@@ -815,7 +802,7 @@ export default function NieuweToetsPage() {
               <button
                 onClick={handleSave}
                 disabled={onderdelen.length === 0}
-                className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                className="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300"
               >
                 Toets opslaan
               </button>
@@ -823,7 +810,6 @@ export default function NieuweToetsPage() {
           </>
         )}
 
-        {/* Stap 3: Details invullen */}
         {currentStep === 'details' && renderDetailForm()}
       </main>
     </div>
