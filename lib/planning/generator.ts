@@ -13,7 +13,11 @@ type ToetsOnderdeel = {
   type: 'hoofdstukken' | 'woordjes' | 'opgaven' | 'grammatica' | 'formules' | 'tekst';
   
   // Hoofdstukken
-  hoofdstukken?: Array<{ naam: string; paginas?: number }>;
+  hoofdstukken?: Array<{ 
+    naam: string; 
+    pagina_van?: number;
+    pagina_tot?: number;
+  }>;
   aantal_hoofdstukken?: number;
   
   // Woordjes
@@ -196,7 +200,7 @@ export class PlanningGenerator {
   }
 
   /**
-   * Plan hoofdstukken
+   * Plan hoofdstukken met slimme pagina verdeling
    */
   private planHoofdstukken(
     onderdeel: ToetsOnderdeel,
@@ -207,50 +211,164 @@ export class PlanningGenerator {
     const items: PlanningItem[] = [];
     
     let aantalHoofdstukken: number;
-    let hoofdstukkenLijst: string[] = [];
+    let hoofdstukkenLijst: Array<{ naam: string; pagina_van?: number; pagina_tot?: number }> = [];
 
     if (onderdeel.hoofdstukken && onderdeel.hoofdstukken.length > 0) {
       aantalHoofdstukken = onderdeel.hoofdstukken.length;
-      hoofdstukkenLijst = onderdeel.hoofdstukken.map(h => h.naam);
+      hoofdstukkenLijst = onderdeel.hoofdstukken;
     } else if (onderdeel.aantal_hoofdstukken) {
       aantalHoofdstukken = onderdeel.aantal_hoofdstukken;
-      hoofdstukkenLijst = Array.from({ length: aantalHoofdstukken }, (_, i) => `Hoofdstuk ${i + 1}`);
+      hoofdstukkenLijst = Array.from({ length: aantalHoofdstukken }, (_, i) => ({
+        naam: `Hoofdstuk ${i + 1}`,
+      }));
     } else {
       return items;
     }
 
-    // Verdeel hoofdstukken over beschikbare dagen
-    const hoofdstukkenPerDag = Math.ceil(aantalHoofdstukken / leerDagen.length);
-    
-    let hoofdstukIndex = 0;
-    for (let i = 0; i < leerDagen.length && hoofdstukIndex < aantalHoofdstukken; i++) {
-      const hoofdstukkenVandaag: number[] = [];
-      const beschrijvingen: string[] = [];
+    // Check of we pagina's hebben
+    const heeftPaginas = hoofdstukkenLijst.some(h => h.pagina_van !== undefined && h.pagina_tot !== undefined);
+
+    if (heeftPaginas) {
+      // SLIMME PAGINA VERDELING
+      return this.planHoofdstukkenMetPaginas(
+        hoofdstukkenLijst,
+        leerDagen,
+        herhalingsDagen,
+        toetsId,
+        onderdeel
+      );
+    } else {
+      // OUDE LOGICA: Verdeel hoofdstukken zonder pagina's
+      const hoofdstukkenPerDag = Math.ceil(aantalHoofdstukken / leerDagen.length);
       
-      for (let j = 0; j < hoofdstukkenPerDag && hoofdstukIndex < aantalHoofdstukken; j++) {
-        hoofdstukkenVandaag.push(hoofdstukIndex + 1);
-        beschrijvingen.push(hoofdstukkenLijst[hoofdstukIndex]);
-        hoofdstukIndex++;
+      let hoofdstukIndex = 0;
+      for (let i = 0; i < leerDagen.length && hoofdstukIndex < aantalHoofdstukken; i++) {
+        const hoofdstukkenVandaag: number[] = [];
+        const beschrijvingen: string[] = [];
+        
+        for (let j = 0; j < hoofdstukkenPerDag && hoofdstukIndex < aantalHoofdstukken; j++) {
+          hoofdstukkenVandaag.push(hoofdstukIndex + 1);
+          beschrijvingen.push(hoofdstukkenLijst[hoofdstukIndex].naam);
+          hoofdstukIndex++;
+        }
+
+        items.push({
+          datum: leerDagen[i],
+          type: 'leren',
+          beschrijving: `Lees ${beschrijvingen.join(', ')}`,
+          geschatte_tijd: onderdeel.geschatte_tijd || 45,
+          toets_id: toetsId,
+          toets_onderdeel_id: onderdeel.id,
+          hoofdstuk_nummers: hoofdstukkenVandaag,
+        });
       }
 
-      items.push({
-        datum: leerDagen[i],
-        type: 'leren',
-        beschrijving: `Lees ${beschrijvingen.join(', ')}`,
-        geschatte_tijd: onderdeel.geschatte_tijd || 45,
-        toets_id: toetsId,
-        toets_onderdeel_id: onderdeel.id,
-        hoofdstuk_nummers: hoofdstukkenVandaag,
-      });
+      // Herhaling
+      if (herhalingsDagen.length > 0) {
+        items.push({
+          datum: herhalingsDagen[0],
+          type: 'herhalen',
+          beschrijving: `Herhaal alle hoofdstukken`,
+          geschatte_tijd: Math.ceil((onderdeel.geschatte_tijd || 45) * 0.5),
+          toets_id: toetsId,
+          toets_onderdeel_id: onderdeel.id,
+        });
+      }
+
+      return items;
+    }
+  }
+
+  /**
+   * Plan hoofdstukken met pagina's - slimme verdeling
+   */
+  private planHoofdstukkenMetPaginas(
+    hoofdstukken: Array<{ naam: string; pagina_van?: number; pagina_tot?: number }>,
+    leerDagen: Date[],
+    herhalingsDagen: Date[],
+    toetsId: string,
+    onderdeel: ToetsOnderdeel
+  ): PlanningItem[] {
+    const items: PlanningItem[] = [];
+
+    // Bereken totaal aantal pagina's
+    const totaalPaginas = hoofdstukken.reduce((sum, h) => {
+      if (h.pagina_van !== undefined && h.pagina_tot !== undefined) {
+        return sum + (h.pagina_tot - h.pagina_van + 1);
+      }
+      return sum;
+    }, 0);
+
+    if (totaalPaginas === 0 || leerDagen.length === 0) {
+      return items;
     }
 
-    // Herhaling toevoegen
+    // Bereken pagina's per dag
+    const paginasPerDag = Math.ceil(totaalPaginas / leerDagen.length);
+
+    let dagIndex = 0;
+    let huidigePagina = 0; // Tracking waar we zijn in het totaal
+
+    for (const hoofdstuk of hoofdstukken) {
+      if (!hoofdstuk.pagina_van || !hoofdstuk.pagina_tot) {
+        // Hoofdstuk zonder pagina's - plan als geheel
+        if (dagIndex < leerDagen.length) {
+          items.push({
+            datum: leerDagen[dagIndex],
+            type: 'leren',
+            beschrijving: `Lees ${hoofdstuk.naam}`,
+            geschatte_tijd: 30,
+            toets_id: toetsId,
+            toets_onderdeel_id: onderdeel.id,
+          });
+          dagIndex++;
+        }
+        continue;
+      }
+
+      const hoofdstukPaginas = hoofdstuk.pagina_tot - hoofdstuk.pagina_van + 1;
+
+      // Als hoofdstuk klein genoeg is, plan in 1 dag
+      if (hoofdstukPaginas <= paginasPerDag && dagIndex < leerDagen.length) {
+        items.push({
+          datum: leerDagen[dagIndex],
+          type: 'leren',
+          beschrijving: `Lees ${hoofdstuk.naam}, pag ${hoofdstuk.pagina_van}-${hoofdstuk.pagina_tot}`,
+          geschatte_tijd: Math.ceil(hoofdstukPaginas * 2), // 2 min per pagina
+          toets_id: toetsId,
+          toets_onderdeel_id: onderdeel.id,
+        });
+        dagIndex++;
+      } else {
+        // Groot hoofdstuk - split over meerdere dagen
+        let paginaStart = hoofdstuk.pagina_van;
+        
+        while (paginaStart <= hoofdstuk.pagina_tot && dagIndex < leerDagen.length) {
+          const paginaEind = Math.min(paginaStart + paginasPerDag - 1, hoofdstuk.pagina_tot);
+          const aantalPaginas = paginaEind - paginaStart + 1;
+
+          items.push({
+            datum: leerDagen[dagIndex],
+            type: 'leren',
+            beschrijving: `Lees ${hoofdstuk.naam}, pag ${paginaStart}-${paginaEind}`,
+            geschatte_tijd: Math.ceil(aantalPaginas * 2),
+            toets_id: toetsId,
+            toets_onderdeel_id: onderdeel.id,
+          });
+
+          paginaStart = paginaEind + 1;
+          dagIndex++;
+        }
+      }
+    }
+
+    // Herhaling
     if (herhalingsDagen.length > 0) {
       items.push({
         datum: herhalingsDagen[0],
         type: 'herhalen',
         beschrijving: `Herhaal alle hoofdstukken`,
-        geschatte_tijd: Math.ceil((onderdeel.geschatte_tijd || 45) * 0.5),
+        geschatte_tijd: Math.ceil(totaalPaginas * 1), // 1 min per pagina bij herhaling
         toets_id: toetsId,
         toets_onderdeel_id: onderdeel.id,
       });
