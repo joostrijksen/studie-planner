@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
+import BreakoutGame from '@/components/BreakoutGame';
+import { GameCredits } from '@/lib/game/credits';
 
 type UserProfile = {
   naam: string;
@@ -14,11 +16,13 @@ export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [gameCredits, setGameCredits] = useState(0);
+  const [showGame, setShowGame] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const router = useRouter();
 
   useEffect(() => {
     checkUser();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function checkUser() {
@@ -46,6 +50,13 @@ export default function DashboardPage() {
       }
 
       setProfile((profile as UserProfile) ?? null);
+
+      // Haal game credits en leaderboard op
+      const credits = await GameCredits.getCredits(user.id);
+      setGameCredits(credits);
+      
+      const scores = await GameCredits.getLeaderboard(5);
+      setLeaderboard(scores);
     } catch (error) {
       console.error('Error:', error);
     } finally {
@@ -56,6 +67,25 @@ export default function DashboardPage() {
   async function handleLogout() {
     await supabase.auth.signOut();
     router.push('/auth/login');
+  }
+
+  async function handlePlayGame() {
+    const canPlay = await GameCredits.spendCredit();
+    if (canPlay) {
+      setGameCredits(c => c - 1);
+      setShowGame(true);
+    } else {
+      alert('Geen credits! Vink taken af om credits te verdienen.');
+    }
+  }
+
+  async function handleGameOver(score: number) {
+    if (!user) return;
+    
+    await GameCredits.saveScore(user.id, score);
+    const scores = await GameCredits.getLeaderboard(5);
+    setLeaderboard(scores);
+    setShowGame(false);
   }
 
   if (loading) {
@@ -167,7 +197,7 @@ export default function DashboardPage() {
             <div className="text-4xl mb-3">📝</div>
             <h3 className="text-xl font-semibold mb-2">Huiswerk</h3>
             <p className="text-gray-600 text-sm mb-4">
-              {profile?.rol === 'student' ? 'Voeg huiswerk toe aan de planning' : 'Bekijk huiswerk van Lars'}
+              {profile?.rol === 'student' ? 'Voeg huiswerk toe en houd deadlines bij' : 'Bekijk huiswerk van Lars'}
             </p>
             {profile?.rol === 'student' ? (
               <div className="flex gap-2">
@@ -212,7 +242,7 @@ export default function DashboardPage() {
             <div className="text-4xl mb-3">❓</div>
             <h3 className="text-xl font-semibold mb-2">Vragen</h3>
             <p className="text-gray-600 text-sm mb-4">
-              {profile?.rol === 'student' ? 'Stel vragen aan papa' : 'Beantwoord vragen van Lars'}
+              {profile?.rol === 'student' ? 'Stel vragen aan je ouders' : 'Beantwoord vragen van Lars'}
             </p>
             {profile?.rol === 'student' ? (
               <div className="flex gap-2">
@@ -246,6 +276,56 @@ export default function DashboardPage() {
             <OuderDashboardWidget />
           </div>
         )}
+
+        {/* Breakout Game Card */}
+        <div className="mt-8 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl shadow-sm border-2 border-purple-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-2xl font-bold text-purple-900">🎮 Breakout Pauze</h3>
+              <p className="text-purple-700 text-sm">Vink taken af om credits te verdienen!</p>
+            </div>
+            <div className="text-right">
+              <div className="text-3xl font-bold text-purple-600">{gameCredits}</div>
+              <div className="text-xs text-purple-600">Credits</div>
+            </div>
+          </div>
+
+          <div className="flex gap-4 mb-4">
+            <button
+              onClick={handlePlayGame}
+              disabled={gameCredits < 1}
+              className="flex-1 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-bold text-lg"
+            >
+              {gameCredits < 1 ? '🔒 Geen credits' : '🎮 Speel (1 credit)'}
+            </button>
+          </div>
+
+          {leaderboard.length > 0 && (
+            <div className="bg-white rounded-lg p-4">
+              <h4 className="font-bold mb-3 text-purple-900 flex items-center gap-2">
+                🏆 Top Scores
+              </h4>
+              <div className="space-y-2">
+                {leaderboard.map((entry, idx) => (
+                  <div key={idx} className="flex justify-between items-center p-2 hover:bg-purple-50 rounded">
+                    <span className="font-medium">
+                      <span className="text-purple-600 mr-2">{idx + 1}.</span>
+                      {entry.user?.naam || 'Unknown'}
+                    </span>
+                    <span className="font-bold text-purple-600">{entry.score}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {showGame && (
+          <BreakoutGame
+            onGameOver={handleGameOver}
+            onClose={() => setShowGame(false)}
+          />
+        )}
       </main>
     </div>
   );
@@ -264,7 +344,6 @@ function OuderDashboardWidget() {
 
   useEffect(() => {
     loadStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadStats() {
