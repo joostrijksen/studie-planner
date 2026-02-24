@@ -271,7 +271,7 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
       game.animationId = requestAnimationFrame(gameLoop);
     }
 
-    game.animationId = requestAnimationFrame(gameLoop);
+    gameStateRef.current.animationId = requestAnimationFrame(gameLoop);
 
     return () => {
       cancelAnimationFrame(game.animationId);
