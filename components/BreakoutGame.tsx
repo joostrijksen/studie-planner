@@ -274,7 +274,7 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
     gameStateRef.current.animationId = requestAnimationFrame(gameLoop);
 
     return () => {
-      cancelAnimationFrame(game.animationId);
+      cancelAnimationFrame(gameStateRef.current.animationId);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
