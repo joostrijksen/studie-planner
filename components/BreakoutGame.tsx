@@ -339,13 +339,15 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
   }
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  const canvas = canvasRef.current;
+  if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  const ctxMaybe = canvas.getContext('2d');
+  if (!ctxMaybe) return;
 
-    const game = gameRef.current;
+  const ctx: CanvasRenderingContext2D = ctxMaybe;
+
+  const game = gameRef.current;
 
     game.currentScore = 0;
     game.currentLives = 3;
