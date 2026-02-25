@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// ─── 1Types ────────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type BreakoutGameProps = {
   onGameOver: (score: number) => void;
@@ -79,15 +79,41 @@ function powerUpLabel(kind: PowerUpKind): string {
 
 // ─── Drawing helpers ──────────────────────────────────────────────────────────
 
+const POWERUP_COLORS: Record<PowerUpKind, { bg: string; border: string }> = {
+  expand:    { bg: '#7c3aed', border: '#a78bfa' }, // paars  – plank langer
+  multiball: { bg: '#b45309', border: '#fcd34d' }, // goud   – 3 ballen
+  slow:      { bg: '#0e7490', border: '#67e8f9' }, // cyaan  – slow
+  life:      { bg: '#be123c', border: '#fda4af' }, // rood   – extra leven
+};
+
 function drawPowerUp(ctx: CanvasRenderingContext2D, p: PowerUp) {
+  const { bg, border } = POWERUP_COLORS[p.kind];
+
   ctx.save();
-  ctx.fillStyle = '#111827';
-  ctx.fillRect(p.x, p.y, p.w, p.h);
+
+  // Glow
+  ctx.shadowColor = border;
+  ctx.shadowBlur = 8;
+
+  // Achtergrond
+  ctx.fillStyle = bg;
+  ctx.beginPath();
+  ctx.roundRect(p.x, p.y, p.w, p.h, 5);
+  ctx.fill();
+
+  // Rand
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Icoon
   ctx.fillStyle = '#ffffff';
-  ctx.font = '16px sans-serif';
+  ctx.font = 'bold 14px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(powerUpLabel(p.kind), p.x + p.w / 2, p.y + p.h / 2 + 1);
+
   ctx.restore();
 }
 
@@ -166,7 +192,7 @@ const LEVELS = buildLevels(20);
 const PADDLE_BASE_WIDTH = 110;
 const PADDLE_HEIGHT = 10;
 const PADDLE_SPEED = 9;
-const BALL_BASE_SPEED = 5.0;
+const BALL_BASE_SPEED = 3.2;
 const BALL_RADIUS = 8;
 const BRICK_PADDING = 10;
 const BRICK_HEIGHT = 20;
