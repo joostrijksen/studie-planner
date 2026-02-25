@@ -211,7 +211,7 @@ const LEVELS = buildLevels(20);
 
 const PADDLE_BASE_WIDTH = 110;
 const PADDLE_HEIGHT = 10;
-const PADDLE_SPEED = 9;
+const PADDLE_SPEED = 12;
 const BALL_BASE_SPEED = 5.2;
 const BALL_RADIUS = 8;
 const BRICK_PADDING = 10;
