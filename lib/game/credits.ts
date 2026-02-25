@@ -46,7 +46,7 @@ static async getLeaderboard(limit: number = 10) {
   }
 
   // Haal users apart op
-  const userIds = [...new Set(scores.map(s => s.user_id))];
+const userIds = scores.map(s => s.user_id).filter((v, i, a) => a.indexOf(v) === i);
   const { data: users } = await supabase
     .from('users')
     .select('id, naam')
