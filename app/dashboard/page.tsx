@@ -38,7 +38,6 @@ export default function DashboardPage() {
 
       setUser(user);
 
-      // Haal user profiel op (incl avatar_url)
       const { data: profile, error: profileError } = await supabase
         .from('users')
         .select('naam, rol, avatar_url')
@@ -51,7 +50,6 @@ export default function DashboardPage() {
 
       setProfile((profile as UserProfile) ?? null);
 
-      // Haal game credits en leaderboard op
       const credits = await GameCredits.getCredits(user.id);
       setGameCredits(credits);
       
@@ -111,7 +109,6 @@ export default function DashboardPage() {
               </button>
             </div>
 
-            {/* ✅ Avatar rechtsboven + naam + profiel wijzigen + uitloggen */}
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center">
@@ -277,7 +274,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Breakout Game Card */}
         <div className="mt-8 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl shadow-sm border-2 border-purple-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -300,11 +296,11 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          {leaderboard.length > 0 && (
-            <div className="bg-white rounded-lg p-4">
-              <h4 className="font-bold mb-3 text-purple-900 flex items-center gap-2">
-                🏆 Top Scores
-              </h4>
+          <div className="bg-white rounded-lg p-4">
+            <h4 className="font-bold mb-3 text-purple-900 flex items-center gap-2">
+              🏆 Top Scores
+            </h4>
+            {leaderboard.length > 0 ? (
               <div className="space-y-2">
                 {leaderboard.map((entry, idx) => (
                   <div key={idx} className="flex justify-between items-center p-2 hover:bg-purple-50 rounded">
@@ -316,8 +312,13 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="text-center py-4">
+                <p className="text-gray-500 text-sm">Nog geen scores.</p>
+                <p className="text-gray-400 text-xs mt-1">Speel om de eerste te zijn! 🎮</p>
+              </div>
+            )}
+          </div>
         </div>
 
         {showGame && (
@@ -331,7 +332,6 @@ export default function DashboardPage() {
   );
 }
 
-// Ouder Dashboard Widget Component
 function OuderDashboardWidget() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -353,13 +353,11 @@ function OuderDashboardWidget() {
       overWeek.setDate(overWeek.getDate() + 7);
       const overWeekString = overWeek.toISOString().split('T')[0];
 
-      // Open vragen
       const { data: vragen, count: vragenCount } = await supabase
         .from('vragen')
         .select('*', { count: 'exact' })
         .eq('status', 'open');
 
-      // Aankomende toetsen
       const { data: toetsen } = await supabase
         .from('toetsen')
         .select('id, datum, titel, vak:vakken(naam, kleur)')
@@ -368,14 +366,12 @@ function OuderDashboardWidget() {
         .order('datum', { ascending: true })
         .limit(3);
 
-      // Huiswerk vandaag
       const { data: huiswerk, count: huiswerkCount } = await supabase
         .from('huiswerk')
         .select('*', { count: 'exact' })
         .eq('deadline', vandaag)
         .eq('voltooid', false);
 
-      // Planning voortgang
       const { data: planningVandaag } = await supabase.from('planning_items').select('voltooid').eq('datum', vandaag);
 
       const voortgang =
