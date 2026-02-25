@@ -211,14 +211,14 @@ const LEVELS = buildLevels(20);
 
 const PADDLE_BASE_WIDTH = 110;
 const PADDLE_HEIGHT = 10;
-const PADDLE_SPEED = 12;
-const BALL_BASE_SPEED = 5.0;
+const PADDLE_SPEED = 9;
+const BALL_BASE_SPEED = 3.2;
 const BALL_RADIUS = 8;
 const BRICK_PADDING = 10;
 const BRICK_HEIGHT = 20;
 const BRICK_OFFSET_TOP = 60;
 const BRICK_OFFSET_LEFT = 20;
-const POWERUP_DROP_CHANCE = 0.08;
+const POWERUP_DROP_CHANCE = 0.18;
 const POWERUP_SIZE = 24;
 const EXPAND_DURATION = 9000;
 const SLOW_DURATION = 7000;
@@ -264,6 +264,7 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
     currentLives: 3,
     expandUntil: 0,
     slowUntil: 0,
+    levelSpeed: BALL_BASE_SPEED,
     gameOverSent: false,
   });
 
@@ -323,6 +324,7 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
   function resetBalls(levelNum: number, canvasWidth: number, canvasHeight: number) {
     const cfg = LEVELS[clamp(levelNum - 1, 0, LEVELS.length - 1)];
     const speed = BALL_BASE_SPEED * cfg.speedMul;
+    g.current.levelSpeed = speed; // sla vaste snelheid op
     const dir = Math.random() > 0.5 ? 1 : -1;
     g.current.balls = [{
       x: canvasWidth / 2,
@@ -544,7 +546,7 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
         if (hitsPaddle) {
           const hitPos = (ball.x - game.paddle.x) / game.paddle.width;
           const angle = (hitPos - 0.5) * 1.2;
-          const speed = Math.max(3.4, Math.sqrt(ball.dx * ball.dx + ball.dy * ball.dy));
+          const speed = game.levelSpeed; // vaste snelheid per level
           ball.dx = Math.sin(angle) * speed * 1.8;
           ball.dy = -Math.abs(Math.cos(angle) * speed);
         }
