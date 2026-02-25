@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── 1Types ────────────────────────────────────────────────────────────────────
 
 type BreakoutGameProps = {
   onGameOver: (score: number) => void;
