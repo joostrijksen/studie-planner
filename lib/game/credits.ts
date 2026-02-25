@@ -31,20 +31,31 @@ export class GameCredits {
     });
   }
 
- // Haal leaderboard op
+// Haal leaderboard op
 static async getLeaderboard(limit: number = 10) {
-  const { data, error } = await supabase
+  // Haal scores op
+  const { data: scores, error: scoresError } = await supabase
     .from('game_scores')
-    .select(`
-      score,
-      played_at,
-      user:users!inner(naam)
-    `)
+    .select('*')
     .order('score', { ascending: false })
     .limit(limit);
-  
-  console.log('🎮 Leaderboard query - data:', data, 'error:', error);
-  
-  return data || [];
+
+  if (scoresError || !scores) {
+    console.log('Error fetching scores:', scoresError);
+    return [];
+  }
+
+  // Haal users apart op
+  const userIds = [...new Set(scores.map(s => s.user_id))];
+  const { data: users } = await supabase
+    .from('users')
+    .select('id, naam')
+    .in('id', userIds);
+
+  // Combineer data
+  return scores.map(score => ({
+    ...score,
+    user: users?.find(u => u.id === score.user_id)
+  }));
 }
 }
