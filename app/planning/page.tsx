@@ -65,8 +65,16 @@ export default function PlanningPage() {
       const gisterenString = gisteren.toISOString().split('T')[0];
       const vandaagString = vandaag.toISOString().split('T')[0];
 
+      console.log('🔍 Check doorschuiven:', {
+        selectedDate: selectedDate.toISOString().split('T')[0],
+        vandaag: vandaagString,
+        gisteren: gisterenString,
+        isVandaag: selectedDate.toISOString().split('T')[0] === vandaagString
+      });
+
       // Alleen doorschuiven als we VANDAAG bekijken
       if (selectedDate.toISOString().split('T')[0] !== vandaagString) {
+        console.log('⏭️ Niet vandaag, skip');
         return;
       }
 
@@ -77,7 +85,15 @@ export default function PlanningPage() {
         .eq('datum', gisterenString)
         .eq('voltooid', false);
 
-      if (gisterenError || !gisterenItems || gisterenItems.length === 0) {
+      console.log('📋 Gisteren onafgevinkt:', gisterenItems?.length || 0, gisterenItems);
+
+      if (gisterenError) {
+        console.error('❌ Error gisteren items:', gisterenError);
+        return;
+      }
+
+      if (!gisterenItems || gisterenItems.length === 0) {
+        console.log('✅ Geen onafgevinkte items van gisteren');
         return;
       }
 
@@ -86,6 +102,8 @@ export default function PlanningPage() {
         .from('planning_items')
         .select('id, toets_onderdeel_id, huiswerk_id')
         .eq('datum', vandaagString);
+
+      console.log('📋 Vandaag al aanwezig:', vandaagItems?.length || 0);
 
       const bestaandeKeys = new Set(
         vandaagItems?.map(item => 
@@ -96,10 +114,15 @@ export default function PlanningPage() {
       // Kopieer onafgevinkte items naar vandaag (als ze nog niet bestaan)
       const teKopieren = gisterenItems.filter(item => {
         const key = item.toets_onderdeel_id || item.huiswerk_id || item.id;
-        return !bestaandeKeys.has(key);
+        const exists = bestaandeKeys.has(key);
+        console.log(`  - Item ${item.id}: key=${key}, exists=${exists}`);
+        return !exists;
       });
 
+      console.log('✅ Te kopiëren:', teKopieren.length);
+
       if (teKopieren.length === 0) {
+        console.log('⏭️ Alle items zijn al aanwezig vandaag');
         return;
       }
 
@@ -110,7 +133,7 @@ export default function PlanningPage() {
         huiswerk_id: item.huiswerk_id,
         datum: vandaagString,
         type: item.type,
-        beschrijving: `🔄 ${item.beschrijving}`, // Emoji om te tonen dat het doorgeschoven is
+        beschrijving: `🔄 ${item.beschrijving}`,
         geschatte_tijd: item.geschatte_tijd,
         hoofdstuk_nummers: item.hoofdstuk_nummers,
         woorden_van: item.woorden_van,
@@ -120,16 +143,20 @@ export default function PlanningPage() {
         voltooid: false,
       }));
 
+      console.log('💾 Inserting nieuwe items:', nieuweItems);
+
       const { error: insertError } = await supabase
         .from('planning_items')
         .insert(nieuweItems);
 
-      if (!insertError) {
-        // Reload planning om de nieuwe items te tonen
+      if (insertError) {
+        console.error('❌ Insert error:', insertError);
+      } else {
+        console.log('✅ Items succesvol doorgeschoven!');
         await loadPlanningForDate();
       }
     } catch (error) {
-      console.error('Error moving uncompleted items:', error);
+      console.error('❌ Error moving uncompleted items:', error);
     }
   }
 
@@ -140,7 +167,6 @@ export default function PlanningPage() {
       return;
     }
     
-    // Haal user naam op
     const { data: userData } = await supabase
       .from('users')
       .select('naam')
@@ -165,13 +191,11 @@ export default function PlanningPage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    // Start van de week (maandag)
     const startOfWeek = new Date(today);
     const dayOfWeek = startOfWeek.getDay();
     const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
     startOfWeek.setDate(startOfWeek.getDate() + diff);
 
-    // Genereer 7 dagen
     for (let i = 0; i < 7; i++) {
       const day = new Date(startOfWeek);
       day.setDate(startOfWeek.getDate() + i);
@@ -266,7 +290,6 @@ export default function PlanningPage() {
     if (weekDays.length === 0) return;
 
     try {
-      // Dynamisch import om bundle size klein te houden
       const { generateWeekPlanningPDF } = await import('@/lib/pdf/weekplanning');
       
       await generateWeekPlanningPDF(
@@ -289,7 +312,6 @@ export default function PlanningPage() {
         await PlanningService.markAsCompleted(itemId);
       }
       
-      // Reload planning
       await loadPlanningForDate();
     } catch (error) {
       console.error('Error toggling item:', error);
@@ -353,7 +375,6 @@ export default function PlanningPage() {
       </nav>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Week selector */}
         <div className="bg-white rounded-xl shadow-sm border p-4 mb-6">
           <div className="flex items-center justify-between mb-4">
             <button
@@ -416,7 +437,6 @@ export default function PlanningPage() {
           </div>
         </div>
 
-        {/* Planning voor geselecteerde dag */}
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold">
@@ -441,7 +461,6 @@ export default function PlanningPage() {
             </div>
           ) : (
             <>
-              {/* Progress bar */}
               {totalTime > 0 && (
                 <div className="mb-6">
                   <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
@@ -453,7 +472,6 @@ export default function PlanningPage() {
                 </div>
               )}
 
-              {/* Planning items */}
               <div className="space-y-4">
                 {planningItems.map((item) => {
                   const vak = item.toets?.vak || item.huiswerk?.vak;
@@ -555,7 +573,6 @@ export default function PlanningPage() {
           )}
         </div>
 
-        {/* Tips */}
         {planningItems.length > 0 && (
           <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-6">
             <h3 className="font-semibold text-blue-900 mb-2">💡 Tips</h3>
