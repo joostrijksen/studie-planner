@@ -423,8 +423,8 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
     function step() {
       game.animationId = requestAnimationFrame(step);
 
-      // Guard: canvas could theoretically unmount
-      if (!canvas) return;
+      // Guard: canvas/ctx could theoretically unmount
+      if (!canvas || !ctx) return;
       if (pausedRef.current || levelCompleteRef.current || gameOverRef.current) return;
 
       const now = Date.now();
