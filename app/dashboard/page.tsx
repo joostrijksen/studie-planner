@@ -194,7 +194,7 @@ export default function DashboardPage() {
             <div className="text-4xl mb-3">📝</div>
             <h3 className="text-xl font-semibold mb-2">Huiswerk</h3>
             <p className="text-gray-600 text-sm mb-4">
-              {profile?.rol === 'student' ? 'Voeg huiswerk toe en houd deadlines bij' : 'Bekijk huiswerk van Lars'}
+              {profile?.rol === 'student' ? 'Voeg huiswerk toe aan de planning' : 'Bekijk huiswerk van Lars'}
             </p>
             {profile?.rol === 'student' ? (
               <div className="flex gap-2">
@@ -239,7 +239,7 @@ export default function DashboardPage() {
             <div className="text-4xl mb-3">❓</div>
             <h3 className="text-xl font-semibold mb-2">Vragen</h3>
             <p className="text-gray-600 text-sm mb-4">
-              {profile?.rol === 'student' ? 'Stel vragen aan je ouders' : 'Beantwoord vragen van Lars'}
+              {profile?.rol === 'student' ? 'Stel vragen aan je vader' : 'Beantwoord vragen van Lars'}
             </p>
             {profile?.rol === 'student' ? (
               <div className="flex gap-2">
