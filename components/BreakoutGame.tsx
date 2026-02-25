@@ -133,6 +133,8 @@ function drawHudBadges(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: 
 }
 
 function drawBrick(ctx: CanvasRenderingContext2D, brick: Brick) {
+  const hasPowerUp = !brick.indestructible && brick.dropRoll <= POWERUP_DROP_CHANCE;
+
   ctx.save();
 
   if (brick.indestructible) {
@@ -146,9 +148,27 @@ function drawBrick(ctx: CanvasRenderingContext2D, brick: Brick) {
 
   ctx.fillRect(brick.x, brick.y, brick.width, brick.height);
   ctx.globalAlpha = 1;
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2;
+
+  // Gouden glow-rand voor bonustegels
+  if (hasPowerUp) {
+    ctx.shadowColor = '#facc15';
+    ctx.shadowBlur = 6;
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 2;
+  } else {
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+  }
   ctx.strokeRect(brick.x, brick.y, brick.width, brick.height);
+  ctx.shadowBlur = 0;
+
+  // Ster linksonder als bonusindicator
+  if (hasPowerUp) {
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('⭐', brick.x + 3, brick.y + brick.height - 1);
+  }
 
   if (!brick.indestructible && brick.maxHits > 1) {
     ctx.fillStyle = '#ffffff';
@@ -192,7 +212,7 @@ const LEVELS = buildLevels(20);
 const PADDLE_BASE_WIDTH = 110;
 const PADDLE_HEIGHT = 10;
 const PADDLE_SPEED = 9;
-const BALL_BASE_SPEED = 3.2;
+const BALL_BASE_SPEED = 5.0;
 const BALL_RADIUS = 8;
 const BRICK_PADDING = 10;
 const BRICK_HEIGHT = 20;
