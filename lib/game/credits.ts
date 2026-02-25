@@ -31,18 +31,20 @@ export class GameCredits {
     });
   }
 
-  // Haal leaderboard op
-  static async getLeaderboard(limit: number = 10) {
-    const { data } = await supabase
-      .from('game_scores')
-      .select(`
-        score,
-        played_at,
-        user:users!inner(naam)
-      `)
-      .order('score', { ascending: false })
-      .limit(limit);
-    
-    return data || [];
-  }
+ // Haal leaderboard op
+static async getLeaderboard(limit: number = 10) {
+  const { data, error } = await supabase
+    .from('game_scores')
+    .select(`
+      score,
+      played_at,
+      user:users!inner(naam)
+    `)
+    .order('score', { ascending: false })
+    .limit(limit);
+  
+  console.log('🎮 Leaderboard query - data:', data, 'error:', error);
+  
+  return data || [];
+}
 }
