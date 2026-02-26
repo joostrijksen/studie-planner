@@ -8,11 +8,11 @@ export class GameCredits {
       .select('credits')
       .eq('user_id', userId)
       .single();
-    
+
     return data?.credits || 0;
   }
 
-  // Voeg credits toe aan ALLE users (mirroring!)
+  // Voeg credits toe aan ALLE users
   static async addCreditsToAll(amount: number): Promise<void> {
     await supabase.rpc('add_game_credits_to_all', { amount });
   }
@@ -23,39 +23,48 @@ export class GameCredits {
     return !!data;
   }
 
-  // Sla score op
-  static async saveScore(userId: string, score: number): Promise<void> {
+  // Sla score op — game is 'breakout' | 'paratrooper'
+  static async saveScore(
+    userId: string,
+    score: number,
+    game: 'breakout' | 'paratrooper' = 'breakout'
+  ): Promise<void> {
     await supabase.from('game_scores').insert({
       user_id: userId,
       score,
+      game,
     });
   }
 
-// Haal leaderboard op
-static async getLeaderboard(limit: number = 10) {
-  // Haal scores op
-  const { data: scores, error: scoresError } = await supabase
-    .from('game_scores')
-    .select('*')
-    .order('score', { ascending: false })
-    .limit(limit);
+  // Haal leaderboard op per game
+  static async getLeaderboard(
+    limit: number = 10,
+    game: 'breakout' | 'paratrooper' = 'breakout'
+  ) {
+    const { data: scores, error: scoresError } = await supabase
+      .from('game_scores')
+      .select('*')
+      .eq('game', game)
+      .order('score', { ascending: false })
+      .limit(limit);
 
-  if (scoresError || !scores) {
-    console.log('Error fetching scores:', scoresError);
-    return [];
+    if (scoresError || !scores) {
+      console.log('Error fetching scores:', scoresError);
+      return [];
+    }
+
+    const userIds = scores
+      .map(s => s.user_id)
+      .filter((v, i, a) => a.indexOf(v) === i);
+
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, naam')
+      .in('id', userIds);
+
+    return scores.map(score => ({
+      ...score,
+      user: users?.find(u => u.id === score.user_id),
+    }));
   }
-
-  // Haal users apart op
-const userIds = scores.map(s => s.user_id).filter((v, i, a) => a.indexOf(v) === i);
-  const { data: users } = await supabase
-    .from('users')
-    .select('id, naam')
-    .in('id', userIds);
-
-  // Combineer data
-  return scores.map(score => ({
-    ...score,
-    user: users?.find(u => u.id === score.user_id)
-  }));
-}
 }
