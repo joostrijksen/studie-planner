@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import BreakoutGame from '@/components/BreakoutGame';
+import ParatrooperGame from '@/components/ParatrooperGame';
 import { GameCredits } from '@/lib/game/credits';
 
 type UserProfile = {
@@ -18,7 +19,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [gameCredits, setGameCredits] = useState(0);
   const [showGame, setShowGame] = useState(false);
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [showParatrooper, setShowParatrooper] = useState(false);
+  const [breakoutLeaderboard, setBreakoutLeaderboard] = useState<any[]>([]);
+  const [paratrooperLeaderboard, setParatrooperLeaderboard] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'breakout' | 'paratrooper'>('breakout');
   const router = useRouter();
 
   useEffect(() => {
@@ -27,15 +31,8 @@ export default function DashboardPage() {
 
   async function checkUser() {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        router.push('/auth/login');
-        return;
-      }
-
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push('/auth/login'); return; }
       setUser(user);
 
       const { data: profile, error: profileError } = await supabase
@@ -44,17 +41,13 @@ export default function DashboardPage() {
         .eq('id', user.id)
         .single();
 
-      if (profileError) {
-        console.error('Profile error:', profileError);
-      }
-
+      if (profileError) console.error('Profile error:', profileError);
       setProfile((profile as UserProfile) ?? null);
 
       const credits = await GameCredits.getCredits(user.id);
       setGameCredits(credits);
-      
-      const scores = await GameCredits.getLeaderboard(5);
-      setLeaderboard(scores);
+
+      await loadLeaderboards();
     } catch (error) {
       console.error('Error:', error);
     } finally {
@@ -62,12 +55,21 @@ export default function DashboardPage() {
     }
   }
 
+  async function loadLeaderboards() {
+    const [breakout, paratrooper] = await Promise.all([
+      GameCredits.getLeaderboard(5, 'breakout'),
+      GameCredits.getLeaderboard(5, 'paratrooper'),
+    ]);
+    setBreakoutLeaderboard(breakout);
+    setParatrooperLeaderboard(paratrooper);
+  }
+
   async function handleLogout() {
     await supabase.auth.signOut();
     router.push('/auth/login');
   }
 
-  async function handlePlayGame() {
+  async function handlePlayBreakout() {
     const canPlay = await GameCredits.spendCredit();
     if (canPlay) {
       setGameCredits(c => c - 1);
@@ -77,13 +79,28 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleGameOver(score: number) {
+  async function handlePlayParatrooper() {
+    const canPlay = await GameCredits.spendCredit();
+    if (canPlay) {
+      setGameCredits(c => c - 1);
+      setShowParatrooper(true);
+    } else {
+      alert('Geen credits! Vink taken af om credits te verdienen.');
+    }
+  }
+
+  async function handleBreakoutOver(score: number) {
     if (!user) return;
-    
-    await GameCredits.saveScore(user.id, score);
-    const scores = await GameCredits.getLeaderboard(5);
-    setLeaderboard(scores);
+    await GameCredits.saveScore(user.id, score, 'breakout');
+    await loadLeaderboards();
     setShowGame(false);
+  }
+
+  async function handleParatrooperOver(score: number) {
+    if (!user) return;
+    await GameCredits.saveScore(user.id, score, 'paratrooper');
+    await loadLeaderboards();
+    setShowParatrooper(false);
   }
 
   if (loading) {
@@ -93,6 +110,8 @@ export default function DashboardPage() {
       </div>
     );
   }
+
+  const leaderboard = activeTab === 'breakout' ? breakoutLeaderboard : paratrooperLeaderboard;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -113,30 +132,21 @@ export default function DashboardPage() {
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center">
                   {profile?.avatar_url ? (
-                    <img
-                      src={profile.avatar_url}
-                      alt={profile?.naam ?? 'Profiel'}
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={profile.avatar_url} alt={profile?.naam ?? 'Profiel'} className="w-full h-full object-cover" />
                   ) : (
                     <span className="text-sm font-bold text-gray-700">
                       {(profile?.naam?.[0] ?? '?').toUpperCase()}
                     </span>
                   )}
                 </div>
-
-                <span className="text-gray-700">
-                  {profile?.naam} ({profile?.rol})
-                </span>
+                <span className="text-gray-700">{profile?.naam} ({profile?.rol})</span>
               </div>
-
               <button
                 onClick={() => router.push('/profiel')}
                 className="px-4 py-2 text-sm bg-white border hover:bg-gray-50 rounded-lg transition-colors"
               >
                 Profiel wijzigen
               </button>
-
               <button
                 onClick={handleLogout}
                 className="px-4 py-2 text-sm bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors"
@@ -167,26 +177,11 @@ export default function DashboardPage() {
             </p>
             {profile?.rol === 'student' ? (
               <div className="flex gap-2">
-                <button
-                  onClick={() => router.push('/toetsen')}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors"
-                >
-                  Overzicht
-                </button>
-                <button
-                  onClick={() => router.push('/toetsen/nieuw')}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm transition-colors"
-                >
-                  + Nieuw
-                </button>
+                <button onClick={() => router.push('/toetsen')} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors">Overzicht</button>
+                <button onClick={() => router.push('/toetsen/nieuw')} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm transition-colors">+ Nieuw</button>
               </div>
             ) : (
-              <button
-                onClick={() => router.push('/toetsen')}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors"
-              >
-                Toetsen bekijken
-              </button>
+              <button onClick={() => router.push('/toetsen')} className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors">Toetsen bekijken</button>
             )}
           </div>
 
@@ -198,26 +193,11 @@ export default function DashboardPage() {
             </p>
             {profile?.rol === 'student' ? (
               <div className="flex gap-2">
-                <button
-                  onClick={() => router.push('/huiswerk')}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors"
-                >
-                  Overzicht
-                </button>
-                <button
-                  onClick={() => router.push('/huiswerk/nieuw')}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm transition-colors"
-                >
-                  + Nieuw
-                </button>
+                <button onClick={() => router.push('/huiswerk')} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors">Overzicht</button>
+                <button onClick={() => router.push('/huiswerk/nieuw')} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm transition-colors">+ Nieuw</button>
               </div>
             ) : (
-              <button
-                onClick={() => router.push('/huiswerk')}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors"
-              >
-                Huiswerk bekijken
-              </button>
+              <button onClick={() => router.push('/huiswerk')} className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors">Huiswerk bekijken</button>
             )}
           </div>
 
@@ -227,12 +207,7 @@ export default function DashboardPage() {
             <p className="text-gray-600 text-sm mb-4">
               {profile?.rol === 'student' ? 'Bekijk je dagelijkse planning' : 'Bekijk planning van Lars'}
             </p>
-            <button
-              onClick={() => router.push('/planning')}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors"
-            >
-              Planning bekijken
-            </button>
+            <button onClick={() => router.push('/planning')} className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors">Planning bekijken</button>
           </div>
 
           <div className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow border border-gray-200">
@@ -243,26 +218,11 @@ export default function DashboardPage() {
             </p>
             {profile?.rol === 'student' ? (
               <div className="flex gap-2">
-                <button
-                  onClick={() => router.push('/vragen')}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors"
-                >
-                  Mijn vragen
-                </button>
-                <button
-                  onClick={() => router.push('/vragen/nieuw')}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm transition-colors"
-                >
-                  + Nieuw
-                </button>
+                <button onClick={() => router.push('/vragen')} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors">Mijn vragen</button>
+                <button onClick={() => router.push('/vragen/nieuw')} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-sm transition-colors">+ Nieuw</button>
               </div>
             ) : (
-              <button
-                onClick={() => router.push('/vragen')}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors"
-              >
-                Vragen beantwoorden
-              </button>
+              <button onClick={() => router.push('/vragen')} className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm transition-colors">Vragen beantwoorden</button>
             )}
           </div>
         </div>
@@ -274,10 +234,11 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* Game sectie */}
         <div className="mt-8 bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl shadow-sm border-2 border-purple-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-2xl font-bold text-purple-900">🎮 Breakout Pauze</h3>
+              <h3 className="text-2xl font-bold text-purple-900">🎮 Pauze Games</h3>
               <p className="text-purple-700 text-sm">Vink taken af om credits te verdienen!</p>
             </div>
             <div className="text-right">
@@ -286,17 +247,49 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="flex gap-4 mb-4">
+          {/* Speel knoppen */}
+          <div className="flex gap-4 mb-6">
             <button
-              onClick={handlePlayGame}
+              onClick={handlePlayBreakout}
               disabled={gameCredits < 1}
               className="flex-1 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-bold text-lg"
             >
-              {gameCredits < 1 ? '🔒 Geen credits' : '🎮 Speel (1 credit)'}
+              {gameCredits < 1 ? '🔒 Geen credits' : '🧱 Breakout (1 credit)'}
+            </button>
+            <button
+              onClick={handlePlayParatrooper}
+              disabled={gameCredits < 1}
+              className="flex-1 px-6 py-3 bg-green-700 text-white rounded-lg hover:bg-green-800 disabled:bg-gray-300 disabled:cursor-not-allowed font-bold text-lg"
+            >
+              {gameCredits < 1 ? '🔒 Geen credits' : '🚁 Paratrooper (1 credit)'}
             </button>
           </div>
 
+          {/* Leaderboard tabs */}
           <div className="bg-white rounded-lg p-4">
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setActiveTab('breakout')}
+                className={`flex-1 py-2 rounded-lg font-bold text-sm transition-colors ${
+                  activeTab === 'breakout'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                🧱 Breakout
+              </button>
+              <button
+                onClick={() => setActiveTab('paratrooper')}
+                className={`flex-1 py-2 rounded-lg font-bold text-sm transition-colors ${
+                  activeTab === 'paratrooper'
+                    ? 'bg-green-700 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                🚁 Paratrooper
+              </button>
+            </div>
+
             <h4 className="font-bold mb-3 text-purple-900 flex items-center gap-2">
               🏆 Top Scores
             </h4>
@@ -323,8 +316,15 @@ export default function DashboardPage() {
 
         {showGame && (
           <BreakoutGame
-            onGameOver={handleGameOver}
+            onGameOver={handleBreakoutOver}
             onClose={() => setShowGame(false)}
+          />
+        )}
+
+        {showParatrooper && (
+          <ParatrooperGame
+            onGameOver={handleParatrooperOver}
+            onClose={() => setShowParatrooper(false)}
           />
         )}
       </main>
@@ -342,9 +342,7 @@ function OuderDashboardWidget() {
     planningVoortgang: 0,
   });
 
-  useEffect(() => {
-    loadStats();
-  }, []);
+  useEffect(() => { loadStats(); }, []);
 
   async function loadStats() {
     try {
@@ -354,30 +352,23 @@ function OuderDashboardWidget() {
       const overWeekString = overWeek.toISOString().split('T')[0];
 
       const { data: vragen, count: vragenCount } = await supabase
-        .from('vragen')
-        .select('*', { count: 'exact' })
-        .eq('status', 'open');
+        .from('vragen').select('*', { count: 'exact' }).eq('status', 'open');
 
       const { data: toetsen } = await supabase
-        .from('toetsen')
-        .select('id, datum, titel, vak:vakken(naam, kleur)')
-        .gte('datum', vandaag)
-        .lte('datum', overWeekString)
-        .order('datum', { ascending: true })
-        .limit(3);
+        .from('toetsen').select('id, datum, titel, vak:vakken(naam, kleur)')
+        .gte('datum', vandaag).lte('datum', overWeekString)
+        .order('datum', { ascending: true }).limit(3);
 
       const { data: huiswerk, count: huiswerkCount } = await supabase
-        .from('huiswerk')
-        .select('*', { count: 'exact' })
-        .eq('deadline', vandaag)
-        .eq('voltooid', false);
+        .from('huiswerk').select('*', { count: 'exact' })
+        .eq('deadline', vandaag).eq('voltooid', false);
 
-      const { data: planningVandaag } = await supabase.from('planning_items').select('voltooid').eq('datum', vandaag);
+      const { data: planningVandaag } = await supabase
+        .from('planning_items').select('voltooid').eq('datum', vandaag);
 
-      const voortgang =
-        planningVandaag && planningVandaag.length > 0
-          ? Math.round((planningVandaag.filter((p: any) => p.voltooid).length / planningVandaag.length) * 100)
-          : 0;
+      const voortgang = planningVandaag && planningVandaag.length > 0
+        ? Math.round((planningVandaag.filter((p: any) => p.voltooid).length / planningVandaag.length) * 100)
+        : 0;
 
       setStats({
         openVragen: vragenCount || vragen?.length || 0,
@@ -392,29 +383,19 @@ function OuderDashboardWidget() {
     }
   }
 
-  if (loading) {
-    return <div className="text-blue-700 text-sm">Laden...</div>;
-  }
+  if (loading) return <div className="text-blue-700 text-sm">Laden...</div>;
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <button
-        onClick={() => router.push('/vragen')}
-        className="bg-white rounded-lg p-4 border border-blue-200 hover:bg-blue-50 transition-colors text-left"
-      >
+      <button onClick={() => router.push('/vragen')} className="bg-white rounded-lg p-4 border border-blue-200 hover:bg-blue-50 transition-colors text-left">
         <div className="flex items-center justify-between mb-2">
           <span className="text-2xl">❓</span>
-          <span className={`text-2xl font-bold ${stats.openVragen > 0 ? 'text-orange-600' : 'text-green-600'}`}>
-            {stats.openVragen}
-          </span>
+          <span className={`text-2xl font-bold ${stats.openVragen > 0 ? 'text-orange-600' : 'text-green-600'}`}>{stats.openVragen}</span>
         </div>
         <p className="text-sm font-medium text-gray-700">Open vragen</p>
       </button>
 
-      <button
-        onClick={() => router.push('/toetsen')}
-        className="bg-white rounded-lg p-4 border border-blue-200 hover:bg-blue-50 transition-colors text-left"
-      >
+      <button onClick={() => router.push('/toetsen')} className="bg-white rounded-lg p-4 border border-blue-200 hover:bg-blue-50 transition-colors text-left">
         <div className="flex items-center justify-between mb-2">
           <span className="text-2xl">📚</span>
           <span className="text-2xl font-bold text-blue-600">{stats.aankomendToetsen.length}</span>
@@ -422,23 +403,15 @@ function OuderDashboardWidget() {
         <p className="text-sm font-medium text-gray-700">Toetsen deze week</p>
       </button>
 
-      <button
-        onClick={() => router.push('/huiswerk')}
-        className="bg-white rounded-lg p-4 border border-blue-200 hover:bg-blue-50 transition-colors text-left"
-      >
+      <button onClick={() => router.push('/huiswerk')} className="bg-white rounded-lg p-4 border border-blue-200 hover:bg-blue-50 transition-colors text-left">
         <div className="flex items-center justify-between mb-2">
           <span className="text-2xl">📝</span>
-          <span className={`text-2xl font-bold ${stats.huiswerkVandaag > 0 ? 'text-orange-600' : 'text-green-600'}`}>
-            {stats.huiswerkVandaag}
-          </span>
+          <span className={`text-2xl font-bold ${stats.huiswerkVandaag > 0 ? 'text-orange-600' : 'text-green-600'}`}>{stats.huiswerkVandaag}</span>
         </div>
         <p className="text-sm font-medium text-gray-700">Huiswerk vandaag</p>
       </button>
 
-      <button
-        onClick={() => router.push('/planning')}
-        className="bg-white rounded-lg p-4 border border-blue-200 hover:bg-blue-50 transition-colors text-left"
-      >
+      <button onClick={() => router.push('/planning')} className="bg-white rounded-lg p-4 border border-blue-200 hover:bg-blue-50 transition-colors text-left">
         <div className="flex items-center justify-between mb-2">
           <span className="text-2xl">📊</span>
           <span className="text-2xl font-bold text-green-600">{stats.planningVoortgang}%</span>
