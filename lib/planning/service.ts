@@ -22,7 +22,6 @@ export class PlanningService {
    */
   static async generateAndSavePlanning(toetsId: string, userId: string): Promise<boolean> {
     try {
-      // Haal toets op met alle onderdelen
       const { data: toets, error: toetsError } = await supabase
         .from('toetsen')
         .select(`
@@ -37,7 +36,6 @@ export class PlanningService {
         return false;
       }
 
-      // Haal user instellingen op
       const { data: instellingen } = await supabase
         .from('user_instellingen')
         .select('*')
@@ -51,7 +49,6 @@ export class PlanningService {
         herhalings_frequentie: 3,
       };
 
-      // Genereer planning
       const generator = new PlanningGenerator(userInstellingen);
       const planningItems = generator.generatePlanning({
         id: toets.id,
@@ -67,7 +64,9 @@ export class PlanningService {
           opgaven_van: od.opgaven_van,
           opgaven_tot: od.opgaven_tot,
           paragraaf: od.paragraaf,
-          grammatica_onderwerpen: od.grammatica_onderwerpen ? JSON.parse(od.grammatica_onderwerpen) : undefined,
+          grammatica_onderwerpen: od.grammatica_onderwerpen
+            ? JSON.parse(od.grammatica_onderwerpen)
+            : undefined,
           aantal_formules: od.aantal_formules,
           formule_paragrafen: od.formule_paragrafen,
           aantal_paginas: od.aantal_paginas,
@@ -76,8 +75,7 @@ export class PlanningService {
         })),
       });
 
-      // Sla planning items op
-      const itemsToInsert = planningItems.map(item => ({
+      const itemsToInsert = planningItems.map((item) => ({
         user_id: userId,
         toets_id: item.toets_id,
         toets_onderdeel_id: item.toets_onderdeel_id,
@@ -187,10 +185,61 @@ export class PlanningService {
   }
 
   /**
-   * Markeer planning item als voltooid
+   * Haal credits op voor een user
+   */
+  static async getCredits(userId: string): Promise<number> {
+    const { data, error } = await supabase
+      .from('users')
+      .select('credits')
+      .eq('id', userId)
+      .single();
+
+    if (error || !data) {
+      console.error('Error loading credits:', error);
+      return 0;
+    }
+
+    return data.credits ?? 0;
+  }
+
+  /**
+   * Pas credits aan voor een user (positief = toevoegen, negatief = aftrekken)
+   */
+  private static async updateCredits(userId: string, delta: number): Promise<boolean> {
+    const { error } = await supabase.rpc('add_credits', {
+      p_user_id: userId,
+      p_credits: delta,
+    });
+
+    if (error) {
+      console.error('Error updating credits:', error);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Markeer planning item als voltooid en schrijf credits bij
    */
   static async markAsCompleted(itemId: string): Promise<boolean> {
     try {
+      // Haal item op om geschatte_tijd en huidige status te weten
+      const { data: item, error: fetchError } = await supabase
+        .from('planning_items')
+        .select('geschatte_tijd, user_id, voltooid')
+        .eq('id', itemId)
+        .single();
+
+      if (fetchError || !item) {
+        console.error('Error fetching item:', fetchError);
+        return false;
+      }
+
+      // Voorkom dubbel credits bijschrijven als al voltooid
+      if (item.voltooid) return true;
+
+      // Markeer als voltooid
       const { error } = await supabase
         .from('planning_items')
         .update({
@@ -199,7 +248,15 @@ export class PlanningService {
         })
         .eq('id', itemId);
 
-      return !error;
+      if (error) {
+        console.error('Error marking as completed:', error);
+        return false;
+      }
+
+      // Schrijf credits bij (1 credit per minuut studietijd)
+      await PlanningService.updateCredits(item.user_id, item.geschatte_tijd);
+
+      return true;
     } catch (error) {
       console.error('Error marking as completed:', error);
       return false;
@@ -207,10 +264,24 @@ export class PlanningService {
   }
 
   /**
-   * Markeer planning item als niet voltooid
+   * Markeer planning item als niet voltooid en trek credits af
    */
   static async markAsIncomplete(itemId: string): Promise<boolean> {
     try {
+      const { data: item, error: fetchError } = await supabase
+        .from('planning_items')
+        .select('geschatte_tijd, user_id, voltooid')
+        .eq('id', itemId)
+        .single();
+
+      if (fetchError || !item) {
+        console.error('Error fetching item:', fetchError);
+        return false;
+      }
+
+      // Voorkom onnodig aftrekken als al niet voltooid
+      if (!item.voltooid) return true;
+
       const { error } = await supabase
         .from('planning_items')
         .update({
@@ -219,7 +290,15 @@ export class PlanningService {
         })
         .eq('id', itemId);
 
-      return !error;
+      if (error) {
+        console.error('Error marking as incomplete:', error);
+        return false;
+      }
+
+      // Trek credits af
+      await PlanningService.updateCredits(item.user_id, -item.geschatte_tijd);
+
+      return true;
     } catch (error) {
       console.error('Error marking as incomplete:', error);
       return false;
