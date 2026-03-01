@@ -47,7 +47,7 @@ const CANVAS_H = 520;
 const PLAYER_W = 52;
 const PLAYER_H = 28;
 const BULLET_SPEED = 9;
-const ENEMY_BULLET_SPEED = 6;
+const ENEMY_BULLET_SPEED = 8;
 const PLAYER_SPEED = 6;
 
 export default function SpaceInvadersGame({ onGameOver, onClose }: Props) {
@@ -62,14 +62,14 @@ export default function SpaceInvadersGame({ onGameOver, onClose }: Props) {
     lives: 3,
     keys: {} as Record<string, boolean>,
     invaderDir: 1,
-    invaderSpeed: 1.0,
+    invaderSpeed: 1.4,
     invaderTick: 0,
-    invaderMoveInterval: 28,
+    invaderMoveInterval: 20,
     gameOver: false,
     won: false,
     wave: 1,
     enemyShootTimer: 0,
-    enemyShootInterval: 60,
+    enemyShootInterval: 45,
     started: false,
     shield: [] as { x: number; y: number; hp: number }[],
     animFrame: 0,
@@ -99,10 +99,10 @@ export default function SpaceInvadersGame({ onGameOver, onClose }: Props) {
     }
     s.invaderDir = 1;
     // Snelheid blijft stijgen maar heeft een maximum
-    s.invaderSpeed = Math.min(4.0, 1.0 + (wave - 1) * 0.22);
-    s.invaderMoveInterval = Math.max(5, 28 - (wave - 1) * 3);
+    s.invaderSpeed = Math.min(4.5, 1.4 + (wave - 1) * 0.25);
+    s.invaderMoveInterval = Math.max(4, 20 - (wave - 1) * 2);
     // Vijanden schieten steeds vaker
-    s.enemyShootInterval = Math.max(15, 60 - (wave - 1) * 7);
+    s.enemyShootInterval = Math.max(12, 45 - (wave - 1) * 6);
     s.bullet = null;
     s.enemyBullets = [];
 
@@ -297,18 +297,60 @@ export default function SpaceInvadersGame({ onGameOver, onClose }: Props) {
       const frame = s.animFrame;
 
       // --- Input ---
-      if (s.keys['ArrowLeft'] || s.keys['KeyA']) {
-        s.player.x = Math.max(PLAYER_W / 2, s.player.x - PLAYER_SPEED);
+      // Beweging met shield collision — alle richtingen
+      // Helper: check of player overlapt met een shield block
+      function playerHitsShield(nx: number, ny: number): { hit: boolean; blockIdx: number } {
+        const px1 = nx - PLAYER_W / 2, px2 = nx + PLAYER_W / 2;
+        const py1 = ny, py2 = ny + PLAYER_H;
+        for (let i = 0; i < s.shield.length; i++) {
+          const b = s.shield[i];
+          if (b.hp <= 0) continue;
+          if (px2 > b.x && px1 < b.x + 10 && py2 > b.y && py1 < b.y + 10) {
+            return { hit: true, blockIdx: i };
+          }
+        }
+        return { hit: false, blockIdx: -1 };
       }
-      if (s.keys['ArrowRight'] || s.keys['KeyD']) {
-        s.player.x = Math.min(CANVAS_W - PLAYER_W / 2, s.player.x + PLAYER_SPEED);
-      }
-      // Omhoog/omlaag — alleen in onderste helft van het scherm
+
       if (s.keys['ArrowUp'] || s.keys['KeyW']) {
-        s.player.y = Math.max(CANVAS_H / 2, s.player.y - PLAYER_SPEED);
+        const ny = Math.max(CANVAS_H / 2, s.player.y - PLAYER_SPEED);
+        const { hit, blockIdx } = playerHitsShield(s.player.x, ny);
+        if (hit) {
+          s.shield[blockIdx].hp--;
+          spawnParticles(s.shield[blockIdx].x + 5, s.shield[blockIdx].y + 5, '#888', 4);
+        } else {
+          s.player.y = ny;
+        }
       }
       if (s.keys['ArrowDown'] || s.keys['KeyS']) {
-        s.player.y = Math.min(CANVAS_H - 32, s.player.y + PLAYER_SPEED);
+        const ny = Math.min(CANVAS_H - 32, s.player.y + PLAYER_SPEED);
+        const { hit, blockIdx } = playerHitsShield(s.player.x, ny);
+        if (hit) {
+          s.shield[blockIdx].hp--;
+          spawnParticles(s.shield[blockIdx].x + 5, s.shield[blockIdx].y + 5, '#888', 4);
+        } else {
+          s.player.y = ny;
+        }
+      }
+      if (s.keys['ArrowLeft'] || s.keys['KeyA']) {
+        const nx = Math.max(PLAYER_W / 2, s.player.x - PLAYER_SPEED);
+        const { hit, blockIdx } = playerHitsShield(nx, s.player.y);
+        if (hit) {
+          s.shield[blockIdx].hp--;
+          spawnParticles(s.shield[blockIdx].x + 5, s.shield[blockIdx].y + 5, '#888', 4);
+        } else {
+          s.player.x = nx;
+        }
+      }
+      if (s.keys['ArrowRight'] || s.keys['KeyD']) {
+        const nx = Math.min(CANVAS_W - PLAYER_W / 2, s.player.x + PLAYER_SPEED);
+        const { hit, blockIdx } = playerHitsShield(nx, s.player.y);
+        if (hit) {
+          s.shield[blockIdx].hp--;
+          spawnParticles(s.shield[blockIdx].x + 5, s.shield[blockIdx].y + 5, '#888', 4);
+        } else {
+          s.player.x = nx;
+        }
       }
       if (s.keys['Space'] && !s.bullet) {
         s.bullet = { x: s.player.x, y: s.player.y, active: true };
