@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { PlanningService } from '@/lib/planning/service';
@@ -41,156 +41,44 @@ export default function PlanningPage() {
   const [weekDays, setWeekDays] = useState<Date[]>([]);
   const [userName, setUserName] = useState('');
   const [weekPlanningData, setWeekPlanningData] = useState<Map<string, PlanningItem[]>>(new Map());
+  const initialized = useRef(false);
 
+  // Eenmalige initialisatie: user laden → doorschuiven → planning laden
   useEffect(() => {
-    loadUser();
-    generateWeekDays();
+    async function init() {
+      const weeks = generateWeekDays();
+      await loadUser();
+      await checkAndMoveUncompletedItems(new Date());
+      await loadPlanningForDate(new Date());
+      await loadWeekPlanning(weeks);
+      setLoading(false);
+      initialized.current = true;
+    }
+    init();
   }, []);
 
+  // Datum wijziging: alleen na initialisatie
   useEffect(() => {
-    loadPlanningForDate();
-    checkAndMoveUncompletedItems();
+    if (!initialized.current) return;
+    async function refresh() {
+      await checkAndMoveUncompletedItems(selectedDate);
+      await loadPlanningForDate(selectedDate);
+    }
+    refresh();
   }, [selectedDate]);
 
-  async function checkAndMoveUncompletedItems() {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const vandaag = new Date();
-      vandaag.setHours(0, 0, 0, 0);
-      
-      const gisteren = new Date(vandaag);
-      gisteren.setDate(gisteren.getDate() - 1);
-      const gisterenString = gisteren.toISOString().split('T')[0];
-      const vandaagString = vandaag.toISOString().split('T')[0];
-
-      console.log('🔍 Check doorschuiven:', {
-        selectedDate: selectedDate.toISOString().split('T')[0],
-        vandaag: vandaagString,
-        gisteren: gisterenString,
-        isVandaag: selectedDate.toISOString().split('T')[0] === vandaagString
-      });
-
-      // Alleen doorschuiven als we VANDAAG bekijken
-      if (selectedDate.toISOString().split('T')[0] !== vandaagString) {
-        console.log('⏭️ Niet vandaag, skip');
-        return;
-      }
-
-      // Haal onafgevinkte items van gisteren op
-      const { data: gisterenItems, error: gisterenError } = await supabase
-        .from('planning_items')
-        .select('*')
-        .eq('datum', gisterenString)
-        .eq('voltooid', false);
-
-      console.log('📋 Gisteren onafgevinkt:', gisterenItems?.length || 0, gisterenItems);
-
-      if (gisterenError) {
-        console.error('❌ Error gisteren items:', gisterenError);
-        return;
-      }
-
-      if (!gisterenItems || gisterenItems.length === 0) {
-        console.log('✅ Geen onafgevinkte items van gisteren');
-        return;
-      }
-
-      // Check of deze items al bestaan in vandaag (voorkomen duplicaten)
-      const { data: vandaagItems } = await supabase
-        .from('planning_items')
-        .select('id, toets_onderdeel_id, huiswerk_id')
-        .eq('datum', vandaagString);
-
-      console.log('📋 Vandaag al aanwezig:', vandaagItems?.length || 0);
-
-      const bestaandeKeys = new Set(
-        vandaagItems?.map(item => 
-          item.toets_onderdeel_id || item.huiswerk_id || item.id
-        ) || []
-      );
-
-      // Kopieer onafgevinkte items naar vandaag (als ze nog niet bestaan)
-      const teKopieren = gisterenItems.filter(item => {
-        const key = item.toets_onderdeel_id || item.huiswerk_id || item.id;
-        const exists = bestaandeKeys.has(key);
-        console.log(`  - Item ${item.id}: key=${key}, exists=${exists}`);
-        return !exists;
-      });
-
-      console.log('✅ Te kopiëren:', teKopieren.length);
-
-      if (teKopieren.length === 0) {
-        console.log('⏭️ Alle items zijn al aanwezig vandaag');
-        return;
-      }
-
-      const nieuweItems = teKopieren.map(item => ({
-        user_id: item.user_id,
-        toets_id: item.toets_id,
-        toets_onderdeel_id: item.toets_onderdeel_id,
-        huiswerk_id: item.huiswerk_id,
-        datum: vandaagString,
-        type: item.type,
-        beschrijving: `🔄 ${item.beschrijving}`,
-        geschatte_tijd: item.geschatte_tijd,
-        hoofdstuk_nummers: item.hoofdstuk_nummers,
-        woorden_van: item.woorden_van,
-        woorden_tot: item.woorden_tot,
-        opgaven_van: item.opgaven_van,
-        opgaven_tot: item.opgaven_tot,
-        voltooid: false,
-      }));
-
-      console.log('💾 Inserting nieuwe items:', nieuweItems);
-
-      const { error: insertError } = await supabase
-        .from('planning_items')
-        .insert(nieuweItems);
-
-      if (insertError) {
-        console.error('❌ Insert error:', insertError);
-      } else {
-        console.log('✅ Items succesvol doorgeschoven!');
-        await loadPlanningForDate();
-      }
-    } catch (error) {
-      console.error('❌ Error moving uncompleted items:', error);
-    }
-  }
-
-  async function loadUser() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      router.push('/auth/login');
-      return;
-    }
-    
-    const { data: userData } = await supabase
-      .from('users')
-      .select('naam')
-      .eq('id', user.id)
-      .single();
-    
-    if (userData) {
-      setUserName(userData.naam);
-    }
-    
-    setLoading(false);
-  }
-
+  // Week wijziging: herlaad weekplanning
   useEffect(() => {
-    if (weekDays.length > 0) {
-      loadWeekPlanning();
+    if (weekDays.length > 0 && initialized.current) {
+      loadWeekPlanning(weekDays);
     }
   }, [weekDays]);
 
-  function generateWeekDays() {
+  function generateWeekDays(): Date[] {
     const days: Date[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const startOfWeek = new Date(today);
     const dayOfWeek = startOfWeek.getDay();
     const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
@@ -203,14 +91,153 @@ export default function PlanningPage() {
     }
 
     setWeekDays(days);
+    return days;
   }
 
-  async function loadPlanningForDate() {
+  async function loadUser() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push('/auth/login');
+      return;
+    }
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('naam')
+      .eq('id', user.id)
+      .single();
+
+    if (userData) {
+      setUserName(userData.naam);
+    }
+  }
+
+  async function checkAndMoveUncompletedItems(forDate: Date) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const datumString = selectedDate.toISOString().split('T')[0];
+      const nu = new Date();
+      const vandaag = new Date();
+      vandaag.setHours(0, 0, 0, 0);
+      const vandaagString = vandaag.toISOString().split('T')[0];
+
+      const morgen = new Date(vandaag);
+      morgen.setDate(morgen.getDate() + 1);
+      const morgenString = morgen.toISOString().split('T')[0];
+
+      const gisteren = new Date(vandaag);
+      gisteren.setDate(gisteren.getDate() - 1);
+      const gisterenString = gisteren.toISOString().split('T')[0];
+
+      // Scenario 1: Na 22:00 → schuif onafgevinkte items van VANDAAG naar morgen
+      if (nu.getHours() >= 22) {
+        const { data: vandaagOnafgevinkt } = await supabase
+          .from('planning_items')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('datum', vandaagString)
+          .eq('voltooid', false);
+
+        if (vandaagOnafgevinkt && vandaagOnafgevinkt.length > 0) {
+          const { data: morgenItems } = await supabase
+            .from('planning_items')
+            .select('toets_onderdeel_id, huiswerk_id')
+            .eq('user_id', user.id)
+            .eq('datum', morgenString);
+
+          const bestaandeMorgen = new Set(
+            morgenItems
+              ?.map(item => item.toets_onderdeel_id || item.huiswerk_id)
+              .filter(Boolean) || []
+          );
+
+          const teKopierenNaarMorgen = vandaagOnafgevinkt.filter(item => {
+            const key = item.toets_onderdeel_id || item.huiswerk_id;
+            return !key || !bestaandeMorgen.has(key);
+          });
+
+          if (teKopierenNaarMorgen.length > 0) {
+            const nieuweItemsMorgen = teKopierenNaarMorgen.map(item => ({
+              user_id: item.user_id,
+              toets_id: item.toets_id,
+              toets_onderdeel_id: item.toets_onderdeel_id,
+              huiswerk_id: item.huiswerk_id,
+              datum: morgenString,
+              type: item.type,
+              beschrijving: `🔄 ${item.beschrijving.replace(/^🔄 /, '')}`,
+              geschatte_tijd: item.geschatte_tijd,
+              hoofdstuk_nummers: item.hoofdstuk_nummers,
+              woorden_van: item.woorden_van,
+              woorden_tot: item.woorden_tot,
+              opgaven_van: item.opgaven_van,
+              opgaven_tot: item.opgaven_tot,
+              voltooid: false,
+            }));
+
+            await supabase.from('planning_items').insert(nieuweItemsMorgen);
+          }
+        }
+      }
+
+      // Scenario 2: Gisteren onafgevinkt → alsnog doorschuiven naar vandaag
+      const { data: gisterenOnafgevinkt } = await supabase
+        .from('planning_items')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('datum', gisterenString)
+        .eq('voltooid', false);
+
+      if (!gisterenOnafgevinkt || gisterenOnafgevinkt.length === 0) return;
+
+      const { data: vandaagBestaand } = await supabase
+        .from('planning_items')
+        .select('toets_onderdeel_id, huiswerk_id')
+        .eq('user_id', user.id)
+        .eq('datum', vandaagString);
+
+      const bestaandeVandaag = new Set(
+        vandaagBestaand
+          ?.map(item => item.toets_onderdeel_id || item.huiswerk_id)
+          .filter(Boolean) || []
+      );
+
+      const teKopierenNaarVandaag = gisterenOnafgevinkt.filter(item => {
+        const key = item.toets_onderdeel_id || item.huiswerk_id;
+        return !key || !bestaandeVandaag.has(key);
+      });
+
+      if (teKopierenNaarVandaag.length === 0) return;
+
+      const nieuweItemsVandaag = teKopierenNaarVandaag.map(item => ({
+        user_id: item.user_id,
+        toets_id: item.toets_id,
+        toets_onderdeel_id: item.toets_onderdeel_id,
+        huiswerk_id: item.huiswerk_id,
+        datum: vandaagString,
+        type: item.type,
+        beschrijving: `🔄 ${item.beschrijving.replace(/^🔄 /, '')}`,
+        geschatte_tijd: item.geschatte_tijd,
+        hoofdstuk_nummers: item.hoofdstuk_nummers,
+        woorden_van: item.woorden_van,
+        woorden_tot: item.woorden_tot,
+        opgaven_van: item.opgaven_van,
+        opgaven_tot: item.opgaven_tot,
+        voltooid: false,
+      }));
+
+      await supabase.from('planning_items').insert(nieuweItemsVandaag);
+    } catch (error) {
+      console.error('Error moving uncompleted items:', error);
+    }
+  }
+
+  async function loadPlanningForDate(date: Date) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const datumString = date.toISOString().split('T')[0];
 
       const { data, error } = await supabase
         .from('planning_items')
@@ -230,6 +257,7 @@ export default function PlanningPage() {
             vak:vakken(naam, kleur)
           )
         `)
+        .eq('user_id', user.id)
         .eq('datum', datumString)
         .order('geschatte_tijd', { ascending: false });
 
@@ -244,14 +272,14 @@ export default function PlanningPage() {
     }
   }
 
-  async function loadWeekPlanning() {
+  async function loadWeekPlanning(days: Date[]) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
       const weekData = new Map<string, PlanningItem[]>();
 
-      for (const day of weekDays) {
+      for (const day of days) {
         const datumString = day.toISOString().split('T')[0];
 
         const { data, error } = await supabase
@@ -272,6 +300,7 @@ export default function PlanningPage() {
               vak:vakken(naam, kleur)
             )
           `)
+          .eq('user_id', user.id)
           .eq('datum', datumString)
           .order('geschatte_tijd', { ascending: false });
 
@@ -291,13 +320,7 @@ export default function PlanningPage() {
 
     try {
       const { generateWeekPlanningPDF } = await import('@/lib/pdf/weekplanning');
-      
-      await generateWeekPlanningPDF(
-        weekDays[0],
-        weekDays[6],
-        weekPlanningData,
-        userName
-      );
+      await generateWeekPlanningPDF(weekDays[0], weekDays[6], weekPlanningData, userName);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Fout bij genereren PDF. Probeer het opnieuw.');
@@ -311,8 +334,7 @@ export default function PlanningPage() {
       } else {
         await PlanningService.markAsCompleted(itemId);
       }
-      
-      await loadPlanningForDate();
+      await loadPlanningForDate(selectedDate);
     } catch (error) {
       console.error('Error toggling item:', error);
     }
@@ -321,7 +343,6 @@ export default function PlanningPage() {
   function formatDate(date: Date): string {
     const days = ['Zo', 'Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za'];
     const months = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
-    
     return `${days[date.getDay()]} ${date.getDate()} ${months[date.getMonth()]}`;
   }
 
@@ -379,12 +400,15 @@ export default function PlanningPage() {
           <div className="flex items-center justify-between mb-4">
             <button
               onClick={() => {
+                const newWeek = weekDays.map(d => {
+                  const nd = new Date(d);
+                  nd.setDate(nd.getDate() - 7);
+                  return nd;
+                });
+                setWeekDays(newWeek);
                 const newDate = new Date(selectedDate);
                 newDate.setDate(newDate.getDate() - 7);
                 setSelectedDate(newDate);
-                const newWeek = [...weekDays];
-                newWeek.forEach(d => d.setDate(d.getDate() - 7));
-                setWeekDays(newWeek);
               }}
               className="p-2 hover:bg-gray-100 rounded-lg"
             >
@@ -395,12 +419,15 @@ export default function PlanningPage() {
             </h2>
             <button
               onClick={() => {
+                const newWeek = weekDays.map(d => {
+                  const nd = new Date(d);
+                  nd.setDate(nd.getDate() + 7);
+                  return nd;
+                });
+                setWeekDays(newWeek);
                 const newDate = new Date(selectedDate);
                 newDate.setDate(newDate.getDate() + 7);
                 setSelectedDate(newDate);
-                const newWeek = [...weekDays];
-                newWeek.forEach(d => d.setDate(d.getDate() + 7));
-                setWeekDays(newWeek);
               }}
               className="p-2 hover:bg-gray-100 rounded-lg"
             >
@@ -412,7 +439,7 @@ export default function PlanningPage() {
             {weekDays.map((day, index) => {
               const selected = isSameDay(day, selectedDate);
               const today = isToday(day);
-              
+
               return (
                 <button
                   key={index}
@@ -452,12 +479,8 @@ export default function PlanningPage() {
           {planningItems.length === 0 ? (
             <div className="text-center py-12">
               <div className="text-6xl mb-4">🎉</div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                Niks te doen!
-              </h3>
-              <p className="text-gray-600">
-                Je hebt geen taken voor deze dag.
-              </p>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">Niks te doen!</h3>
+              <p className="text-gray-600">Je hebt geen taken voor deze dag.</p>
             </div>
           ) : (
             <>
@@ -476,7 +499,7 @@ export default function PlanningPage() {
                 {planningItems.map((item) => {
                   const vak = item.toets?.vak || item.huiswerk?.vak;
                   const isHuiswerk = !!item.huiswerk;
-                  
+
                   return (
                     <div
                       key={item.id}
@@ -529,13 +552,13 @@ export default function PlanningPage() {
                               </span>
                             )}
                           </div>
-                          
+
                           <p className={`font-medium mb-1 ${
                             item.voltooid ? 'line-through text-gray-500' : 'text-gray-900'
                           }`}>
                             {item.beschrijving}
                           </p>
-                          
+
                           <div className="flex items-center gap-4 text-sm text-gray-600">
                             <span>⏱️ {item.geschatte_tijd} min</span>
                             {item.toets && (
@@ -547,14 +570,10 @@ export default function PlanningPage() {
                                   const vandaag = new Date();
                                   vandaag.setHours(0, 0, 0, 0);
                                   const dagenTot = Math.ceil((toetsDatum.getTime() - vandaag.getTime()) / (1000 * 60 * 60 * 24));
-                                  
-                                  if (dagenTot === 0) {
-                                    return ' (vandaag!)';
-                                  } else if (dagenTot === 1) {
-                                    return ' (morgen)';
-                                  } else if (dagenTot > 1) {
-                                    return ` (nog ${dagenTot} dagen)`;
-                                  }
+
+                                  if (dagenTot === 0) return ' (vandaag!)';
+                                  if (dagenTot === 1) return ' (morgen)';
+                                  if (dagenTot > 1) return ` (nog ${dagenTot} dagen)`;
                                   return '';
                                 })()}
                               </span>
