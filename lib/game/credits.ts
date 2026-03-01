@@ -1,5 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
+type GameType = 'breakout' | 'paratrooper' | 'space_invaders';
+
 export class GameCredits {
   // Haal eigen credits op
   static async getCredits(userId: string): Promise<number> {
@@ -8,7 +10,6 @@ export class GameCredits {
       .select('credits')
       .eq('user_id', userId)
       .single();
-
     return data?.credits || 0;
   }
 
@@ -23,11 +24,11 @@ export class GameCredits {
     return !!data;
   }
 
-  // Sla score op — game is 'breakout' | 'paratrooper'
+  // Sla score op
   static async saveScore(
     userId: string,
     score: number,
-    game: 'breakout' | 'paratrooper' = 'breakout'
+    game: GameType = 'breakout'
   ): Promise<void> {
     await supabase.from('game_scores').insert({
       user_id: userId,
@@ -39,7 +40,7 @@ export class GameCredits {
   // Haal leaderboard op per game
   static async getLeaderboard(
     limit: number = 10,
-    game: 'breakout' | 'paratrooper' = 'breakout'
+    game: GameType = 'breakout'
   ) {
     const { data: scores, error: scoresError } = await supabase
       .from('game_scores')
