@@ -16,6 +16,14 @@ type PlanningItem = {
   opgaven_tot?: number;
 };
 
+// Lokale datum string — voorkomt UTC/tijdzone verschil (NL = UTC+1)
+function toLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export class PlanningService {
   /**
    * Genereer en sla planning op voor een toets
@@ -79,7 +87,7 @@ export class PlanningService {
         user_id: userId,
         toets_id: item.toets_id,
         toets_onderdeel_id: item.toets_onderdeel_id,
-        datum: item.datum.toISOString().split('T')[0],
+        datum: item.toLocalDateString(datum),
         type: item.type,
         beschrijving: item.beschrijving,
         geschatte_tijd: item.geschatte_tijd,
@@ -127,7 +135,7 @@ export class PlanningService {
    * Haal planning op voor een specifieke datum
    */
   static async getPlanningForDate(userId: string, datum: Date) {
-    const datumString = datum.toISOString().split('T')[0];
+    const datumString = toLocalDateString(datum);
 
     const { data, error } = await supabase
       .from('planning_items')
@@ -156,8 +164,8 @@ export class PlanningService {
    * Haal planning op voor een periode
    */
   static async getPlanningForPeriod(userId: string, van: Date, tot: Date) {
-    const vanString = van.toISOString().split('T')[0];
-    const totString = tot.toISOString().split('T')[0];
+    const vanString = toLocalDateString(van);
+    const totString = toLocalDateString(tot);
 
     const { data, error } = await supabase
       .from('planning_items')
