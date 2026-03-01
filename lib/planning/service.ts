@@ -211,48 +211,62 @@ export class PlanningService {
   }
 
   /**
-   * Pas credits aan voor een user (positief = toevoegen, negatief = aftrekken)
+   * Pas credits aan voor een user in game_credits tabel
+   * (positief = toevoegen, negatief = aftrekken)
    */
   private static async updateCredits(userId: string, delta: number): Promise<boolean> {
-    console.log(`💰 Credits bijwerken: user=${userId}, delta=${delta}`);
+    console.log(`💰 Credits bijwerken in game_credits: user=${userId}, delta=${delta}`);
 
-    const { error } = await supabase.rpc('add_credits', {
-      p_user_id: userId,
-      p_credits: delta,
-    });
+    // Haal huidige waarden op
+    const { data: current, error: fetchError } = await supabase
+      .from('game_credits')
+      .select('credits, total_earned, total_spent')
+      .eq('user_id', userId)
+      .single();
 
-    if (error) {
-      console.error('❌ Error updating credits via RPC:', error);
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      console.error('❌ Kan game_credits niet ophalen:', fetchError);
+      return false;
+    }
 
-      // Fallback: direct updaten als de RPC niet bestaat
-      console.log('🔄 Probeer directe update als fallback...');
-      const { data: currentUser, error: fetchError } = await supabase
-        .from('users')
-        .select('credits')
-        .eq('id', userId)
-        .single();
+    if (!current) {
+      // Rij bestaat nog niet → aanmaken
+      const { error: insertError } = await supabase
+        .from('game_credits')
+        .insert({
+          user_id: userId,
+          credits: Math.max(0, delta),
+          total_earned: delta > 0 ? delta : 0,
+          total_spent: 0,
+        });
 
-      if (fetchError || !currentUser) {
-        console.error('❌ Kan huidige credits niet ophalen:', fetchError);
+      if (insertError) {
+        console.error('❌ Kan game_credits niet aanmaken:', insertError);
         return false;
       }
 
-      const nieuweCredits = Math.max(0, (currentUser.credits ?? 0) + delta);
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ credits: nieuweCredits })
-        .eq('id', userId);
-
-      if (updateError) {
-        console.error('❌ Directe update ook mislukt:', updateError);
-        return false;
-      }
-
-      console.log(`✅ Credits direct bijgewerkt: ${currentUser.credits} → ${nieuweCredits}`);
+      console.log(`✅ game_credits aangemaakt met ${Math.max(0, delta)} credits`);
       return true;
     }
 
-    console.log(`✅ Credits bijgewerkt via RPC`);
+    // Rij bestaat → update credits + total_earned/total_spent
+    const nieuweCredits = Math.max(0, (current.credits ?? 0) + delta);
+    const updateData: any = { credits: nieuweCredits };
+    if (delta > 0) {
+      updateData.total_earned = (current.total_earned ?? 0) + delta;
+    }
+
+    const { error: updateError } = await supabase
+      .from('game_credits')
+      .update(updateData)
+      .eq('user_id', userId);
+
+    if (updateError) {
+      console.error('❌ game_credits update mislukt:', updateError);
+      return false;
+    }
+
+    console.log(`✅ game_credits bijgewerkt: ${current.credits} → ${nieuweCredits}`);
     return true;
   }
 
