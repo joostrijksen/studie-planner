@@ -47,7 +47,7 @@ const CANVAS_H = 520;
 const PLAYER_W = 52;
 const PLAYER_H = 28;
 const BULLET_SPEED = 9;
-const ENEMY_BULLET_SPEED = 4;
+const ENEMY_BULLET_SPEED = 6;
 const PLAYER_SPEED = 6;
 
 export default function SpaceInvadersGame({ onGameOver, onClose }: Props) {
@@ -62,14 +62,14 @@ export default function SpaceInvadersGame({ onGameOver, onClose }: Props) {
     lives: 3,
     keys: {} as Record<string, boolean>,
     invaderDir: 1,
-    invaderSpeed: 0.6,
+    invaderSpeed: 1.0,
     invaderTick: 0,
-    invaderMoveInterval: 40,
+    invaderMoveInterval: 28,
     gameOver: false,
     won: false,
     wave: 1,
     enemyShootTimer: 0,
-    enemyShootInterval: 90,
+    enemyShootInterval: 60,
     started: false,
     shield: [] as { x: number; y: number; hp: number }[],
     animFrame: 0,
@@ -99,10 +99,10 @@ export default function SpaceInvadersGame({ onGameOver, onClose }: Props) {
     }
     s.invaderDir = 1;
     // Snelheid blijft stijgen maar heeft een maximum
-    s.invaderSpeed = Math.min(3.5, 0.6 + (wave - 1) * 0.18);
-    s.invaderMoveInterval = Math.max(6, 40 - (wave - 1) * 4);
+    s.invaderSpeed = Math.min(4.0, 1.0 + (wave - 1) * 0.22);
+    s.invaderMoveInterval = Math.max(5, 28 - (wave - 1) * 3);
     // Vijanden schieten steeds vaker
-    s.enemyShootInterval = Math.max(20, 90 - (wave - 1) * 8);
+    s.enemyShootInterval = Math.max(15, 60 - (wave - 1) * 7);
     s.bullet = null;
     s.enemyBullets = [];
 
