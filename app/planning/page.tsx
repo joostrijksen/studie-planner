@@ -186,6 +186,13 @@ export default function PlanningPage() {
             }));
 
             await supabase.from('planning_items').insert(nieuweItemsMorgen);
+
+            // Verwijder originele items van vandaag zodat ze morgen staan
+            const teVerwijderenIdsMorgen = teKopierenNaarMorgen.map(item => item.id);
+            await supabase
+              .from('planning_items')
+              .delete()
+              .in('id', teVerwijderenIdsMorgen);
           }
         }
       }
@@ -245,6 +252,13 @@ export default function PlanningPage() {
       }));
 
       await supabase.from('planning_items').insert(nieuweItemsVandaag);
+
+      // Verwijder de originele items van de oude datum zodat ze daar niet meer zichtbaar zijn
+      const teVerwijderenIds = teKopierenNaarVandaag.map(item => item.id);
+      await supabase
+        .from('planning_items')
+        .delete()
+        .in('id', teVerwijderenIds);
     } catch (error) {
       console.error('Error moving uncompleted items:', error);
     }
