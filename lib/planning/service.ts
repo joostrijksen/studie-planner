@@ -87,7 +87,7 @@ export class PlanningService {
         user_id: userId,
         toets_id: item.toets_id,
         toets_onderdeel_id: item.toets_onderdeel_id,
-        datum: item.toLocalDateString(datum),
+        datum: toLocalDateString(item.datum),
         type: item.type,
         beschrijving: item.beschrijving,
         geschatte_tijd: item.geschatte_tijd,
