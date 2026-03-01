@@ -41,35 +41,45 @@ export default function PlanningPage() {
   const [weekDays, setWeekDays] = useState<Date[]>([]);
   const [userName, setUserName] = useState('');
   const [weekPlanningData, setWeekPlanningData] = useState<Map<string, PlanningItem[]>>(new Map());
-  const initialized = useRef(false);
+  const [initialized, setInitialized] = useState(false);
+
+  // Lokale datum string — voorkomt UTC/tijdzone verschil (NL = UTC+1)
+  function toLocalDateString(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
 
   // Eenmalige initialisatie: user laden → doorschuiven → planning laden
   useEffect(() => {
     async function init() {
+      const today = new Date();
       const weeks = generateWeekDays();
       await loadUser();
-      await checkAndMoveUncompletedItems(new Date());
-      await loadPlanningForDate(new Date());
+      await checkAndMoveUncompletedItems(today);
+      await loadPlanningForDate(today);
       await loadWeekPlanning(weeks);
       setLoading(false);
-      initialized.current = true;
+      setInitialized(true);
     }
     init();
   }, []);
 
-  // Datum wijziging: alleen na initialisatie
+  // Datum wijziging: herlaad bij datumwijziging én wanneer init klaar is
   useEffect(() => {
-    if (!initialized.current) return;
+    if (!initialized) return;
+    const dateSnapshot = new Date(selectedDate);
     async function refresh() {
-      await checkAndMoveUncompletedItems(selectedDate);
-      await loadPlanningForDate(selectedDate);
+      await checkAndMoveUncompletedItems(dateSnapshot);
+      await loadPlanningForDate(dateSnapshot);
     }
     refresh();
-  }, [selectedDate]);
+  }, [selectedDate, initialized]);
 
   // Week wijziging: herlaad weekplanning
   useEffect(() => {
-    if (weekDays.length > 0 && initialized.current) {
+    if (weekDays.length > 0 && initialized) {
       loadWeekPlanning(weekDays);
     }
   }, [weekDays]);
@@ -120,15 +130,15 @@ export default function PlanningPage() {
       const nu = new Date();
       const vandaag = new Date();
       vandaag.setHours(0, 0, 0, 0);
-      const vandaagString = vandaag.toISOString().split('T')[0];
+      const vandaagString = toLocalDateString(vandaag);
 
       const morgen = new Date(vandaag);
       morgen.setDate(morgen.getDate() + 1);
-      const morgenString = morgen.toISOString().split('T')[0];
+      const morgenString = toLocalDateString(morgen);
 
       const gisteren = new Date(vandaag);
       gisteren.setDate(gisteren.getDate() - 1);
-      const gisterenString = gisteren.toISOString().split('T')[0];
+      const gisterenString = toLocalDateString(gisteren);
 
       // Scenario 1: Na 22:00 → schuif onafgevinkte items van VANDAAG naar morgen
       if (nu.getHours() >= 22) {
@@ -180,19 +190,20 @@ export default function PlanningPage() {
         }
       }
 
-      // Scenario 2: Gisteren onafgevinkt → alsnog doorschuiven naar vandaag
-      const { data: gisterenOnafgevinkt } = await supabase
+      // Scenario 2: Alle onafgevinkte items van VOOR vandaag → doorschuiven naar vandaag
+      // (niet alleen gisteren, maar ook oudere dagen die gemist zijn)
+      const { data: oudeOnafgevinkt } = await supabase
         .from('planning_items')
         .select('*')
         .eq('user_id', user.id)
-        .eq('datum', gisterenString)
+        .lt('datum', vandaagString)   // alles vóór vandaag
         .eq('voltooid', false);
 
-      if (!gisterenOnafgevinkt || gisterenOnafgevinkt.length === 0) return;
+      if (!oudeOnafgevinkt || oudeOnafgevinkt.length === 0) return;
 
       const { data: vandaagBestaand } = await supabase
         .from('planning_items')
-        .select('toets_onderdeel_id, huiswerk_id')
+        .select('toets_onderdeel_id, huiswerk_id, beschrijving')
         .eq('user_id', user.id)
         .eq('datum', vandaagString);
 
@@ -202,9 +213,16 @@ export default function PlanningPage() {
           .filter(Boolean) || []
       );
 
-      const teKopierenNaarVandaag = gisterenOnafgevinkt.filter(item => {
+      // Voorkom ook duplicaten op basis van beschrijving (voor items zonder onderdeel_id)
+      const bestaandeBeschrijvingen = new Set(
+        vandaagBestaand?.map(item => item.beschrijving.replace(/^🔄 /, '')) || []
+      );
+
+      const teKopierenNaarVandaag = oudeOnafgevinkt.filter(item => {
         const key = item.toets_onderdeel_id || item.huiswerk_id;
-        return !key || !bestaandeVandaag.has(key);
+        const beschrijving = item.beschrijving.replace(/^🔄 /, '');
+        if (key) return !bestaandeVandaag.has(key);
+        return !bestaandeBeschrijvingen.has(beschrijving);
       });
 
       if (teKopierenNaarVandaag.length === 0) return;
@@ -237,7 +255,8 @@ export default function PlanningPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const datumString = date.toISOString().split('T')[0];
+      // Gebruik altijd de meegegeven date, nooit selectedDate uit closure
+      const datumString = toLocalDateString(new Date(date));
 
       const { data, error } = await supabase
         .from('planning_items')
@@ -280,7 +299,7 @@ export default function PlanningPage() {
       const weekData = new Map<string, PlanningItem[]>();
 
       for (const day of days) {
-        const datumString = day.toISOString().split('T')[0];
+        const datumString = toLocalDateString(day);
 
         const { data, error } = await supabase
           .from('planning_items')
