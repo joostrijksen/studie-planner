@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import BreakoutGame from '@/components/BreakoutGame';
 import ParatrooperGame from '@/components/ParatrooperGame';
+import SpaceInvadersGame from '@/components/SpaceInvadersGame';
 import { GameCredits } from '@/lib/game/credits';
 
 type UserProfile = {
@@ -20,9 +21,11 @@ export default function DashboardPage() {
   const [gameCredits, setGameCredits] = useState(0);
   const [showGame, setShowGame] = useState(false);
   const [showParatrooper, setShowParatrooper] = useState(false);
+  const [showSpaceInvaders, setShowSpaceInvaders] = useState(false);
   const [breakoutLeaderboard, setBreakoutLeaderboard] = useState<any[]>([]);
   const [paratrooperLeaderboard, setParatrooperLeaderboard] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'breakout' | 'paratrooper'>('breakout');
+  const [spaceInvadersLeaderboard, setSpaceInvadersLeaderboard] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'breakout' | 'paratrooper' | 'space_invaders'>('breakout');
   const router = useRouter();
 
   useEffect(() => {
@@ -56,12 +59,14 @@ export default function DashboardPage() {
   }
 
   async function loadLeaderboards() {
-    const [breakout, paratrooper] = await Promise.all([
+    const [breakout, paratrooper, spaceInvaders] = await Promise.all([
       GameCredits.getLeaderboard(5, 'breakout'),
       GameCredits.getLeaderboard(5, 'paratrooper'),
+      GameCredits.getLeaderboard(5, 'space_invaders'),
     ]);
     setBreakoutLeaderboard(breakout);
     setParatrooperLeaderboard(paratrooper);
+    setSpaceInvadersLeaderboard(spaceInvaders);
   }
 
   async function handleLogout() {
@@ -89,6 +94,16 @@ export default function DashboardPage() {
     }
   }
 
+  async function handlePlaySpaceInvaders() {
+    const canPlay = await GameCredits.spendCredit();
+    if (canPlay) {
+      setGameCredits(c => c - 1);
+      setShowSpaceInvaders(true);
+    } else {
+      alert('Geen credits! Vink taken af om credits te verdienen.');
+    }
+  }
+
   async function handleBreakoutOver(score: number) {
     if (!user) return;
     await GameCredits.saveScore(user.id, score, 'breakout');
@@ -103,6 +118,13 @@ export default function DashboardPage() {
     setShowParatrooper(false);
   }
 
+  async function handleSpaceInvadersOver(score: number) {
+    if (!user) return;
+    await GameCredits.saveScore(user.id, score, 'space_invaders');
+    await loadLeaderboards();
+    setShowSpaceInvaders(false);
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -111,7 +133,10 @@ export default function DashboardPage() {
     );
   }
 
-  const leaderboard = activeTab === 'breakout' ? breakoutLeaderboard : paratrooperLeaderboard;
+  const leaderboard =
+    activeTab === 'breakout' ? breakoutLeaderboard :
+    activeTab === 'paratrooper' ? paratrooperLeaderboard :
+    spaceInvadersLeaderboard;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -263,6 +288,13 @@ export default function DashboardPage() {
             >
               {gameCredits < 1 ? '🔒 Geen credits' : '🚁 Paratrooper (1 credit)'}
             </button>
+            <button
+              onClick={handlePlaySpaceInvaders}
+              disabled={gameCredits < 1}
+              className="flex-1 px-6 py-3 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-bold text-lg"
+            >
+              {gameCredits < 1 ? '🔒 Geen credits' : '👾 Space Invaders (1 credit)'}
+            </button>
           </div>
 
           {/* Leaderboard tabs */}
@@ -287,6 +319,16 @@ export default function DashboardPage() {
                 }`}
               >
                 🚁 Paratrooper
+              </button>
+              <button
+                onClick={() => setActiveTab('space_invaders')}
+                className={`flex-1 py-2 rounded-lg font-bold text-sm transition-colors ${
+                  activeTab === 'space_invaders'
+                    ? 'bg-cyan-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                👾 Space Invaders
               </button>
             </div>
 
@@ -325,6 +367,13 @@ export default function DashboardPage() {
           <ParatrooperGame
             onGameOver={handleParatrooperOver}
             onClose={() => setShowParatrooper(false)}
+          />
+        )}
+
+        {showSpaceInvaders && (
+          <SpaceInvadersGame
+            onGameOver={handleSpaceInvadersOver}
+            onClose={() => setShowSpaceInvaders(false)}
           />
         )}
       </main>
