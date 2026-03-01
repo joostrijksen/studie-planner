@@ -303,7 +303,14 @@ export default function SpaceInvadersGame({ onGameOver, onClose }: Props) {
       if (s.keys['ArrowRight'] || s.keys['KeyD']) {
         s.player.x = Math.min(CANVAS_W - PLAYER_W / 2, s.player.x + PLAYER_SPEED);
       }
-      if ((s.keys['Space'] || s.keys['ArrowUp']) && !s.bullet) {
+      // Omhoog/omlaag — alleen in onderste helft van het scherm
+      if (s.keys['ArrowUp'] || s.keys['KeyW']) {
+        s.player.y = Math.max(CANVAS_H / 2, s.player.y - PLAYER_SPEED);
+      }
+      if (s.keys['ArrowDown'] || s.keys['KeyS']) {
+        s.player.y = Math.min(CANVAS_H - 32, s.player.y + PLAYER_SPEED);
+      }
+      if (s.keys['Space'] && !s.bullet) {
         s.bullet = { x: s.player.x, y: s.player.y, active: true };
       }
 
@@ -612,8 +619,8 @@ export default function SpaceInvadersGame({ onGameOver, onClose }: Props) {
                 SPACE INVADERS
               </div>
               <div style={{ fontFamily: 'monospace', color: '#aaa', fontSize: 13, marginBottom: 28, textAlign: 'center', lineHeight: 1.8 }}>
-                ← → of A D om te bewegen<br />
-                SPATIE of ↑ om te schieten<br /><br />
+                ← → ↑ ↓ of WASD om te bewegen<br />
+                SPATIE om te schieten<br /><br />
                 <span style={{ color: '#ffdd00' }}>🟡 10 pts</span> &nbsp;
                 <span style={{ color: '#00ffcc' }}>🟢 20 pts</span> &nbsp;
                 <span style={{ color: '#ff6bff' }}>🟣 30 pts</span>
@@ -679,7 +686,7 @@ export default function SpaceInvadersGame({ onGameOver, onClose }: Props) {
 
         {/* Controls hint */}
         <div style={{ fontFamily: 'monospace', color: '#555', fontSize: 12 }}>
-          ← → bewegen &nbsp;|&nbsp; SPATIE schieten &nbsp;|&nbsp; Oneindig waves, 3 levens
+          ← → ↑ ↓ bewegen &nbsp;|&nbsp; SPATIE schieten &nbsp;|&nbsp; Oneindig waves, 3 levens
         </div>
       </div>
     </div>
