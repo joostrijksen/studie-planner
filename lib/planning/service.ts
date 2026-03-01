@@ -206,16 +206,45 @@ export class PlanningService {
    * Pas credits aan voor een user (positief = toevoegen, negatief = aftrekken)
    */
   private static async updateCredits(userId: string, delta: number): Promise<boolean> {
+    console.log(`💰 Credits bijwerken: user=${userId}, delta=${delta}`);
+
     const { error } = await supabase.rpc('add_credits', {
       p_user_id: userId,
       p_credits: delta,
     });
 
     if (error) {
-      console.error('Error updating credits:', error);
-      return false;
+      console.error('❌ Error updating credits via RPC:', error);
+
+      // Fallback: direct updaten als de RPC niet bestaat
+      console.log('🔄 Probeer directe update als fallback...');
+      const { data: currentUser, error: fetchError } = await supabase
+        .from('users')
+        .select('credits')
+        .eq('id', userId)
+        .single();
+
+      if (fetchError || !currentUser) {
+        console.error('❌ Kan huidige credits niet ophalen:', fetchError);
+        return false;
+      }
+
+      const nieuweCredits = Math.max(0, (currentUser.credits ?? 0) + delta);
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ credits: nieuweCredits })
+        .eq('id', userId);
+
+      if (updateError) {
+        console.error('❌ Directe update ook mislukt:', updateError);
+        return false;
+      }
+
+      console.log(`✅ Credits direct bijgewerkt: ${currentUser.credits} → ${nieuweCredits}`);
+      return true;
     }
 
+    console.log(`✅ Credits bijgewerkt via RPC`);
     return true;
   }
 
@@ -237,7 +266,10 @@ export class PlanningService {
       }
 
       // Voorkom dubbel credits bijschrijven als al voltooid
-      if (item.voltooid) return true;
+      if (item.voltooid) {
+        console.log('⚠️ Item al voltooid, geen credits toegevoegd');
+        return true;
+      }
 
       // Markeer als voltooid
       const { error } = await supabase
@@ -253,8 +285,13 @@ export class PlanningService {
         return false;
       }
 
+      console.log(`✅ Item ${itemId} gemarkeerd als voltooid, ${item.geschatte_tijd} credits toevoegen`);
+
       // Schrijf credits bij (1 credit per minuut studietijd)
-      await PlanningService.updateCredits(item.user_id, item.geschatte_tijd);
+      const creditSuccess = await PlanningService.updateCredits(item.user_id, item.geschatte_tijd);
+      if (!creditSuccess) {
+        console.error('⚠️ Credits konden niet worden bijgewerkt, maar item is wel afgevinkt');
+      }
 
       return true;
     } catch (error) {
@@ -280,7 +317,10 @@ export class PlanningService {
       }
 
       // Voorkom onnodig aftrekken als al niet voltooid
-      if (!item.voltooid) return true;
+      if (!item.voltooid) {
+        console.log('⚠️ Item al niet voltooid, geen credits afgetrokken');
+        return true;
+      }
 
       const { error } = await supabase
         .from('planning_items')
@@ -295,8 +335,13 @@ export class PlanningService {
         return false;
       }
 
+      console.log(`↩️ Item ${itemId} teruggedraaid, ${item.geschatte_tijd} credits aftrekken`);
+
       // Trek credits af
-      await PlanningService.updateCredits(item.user_id, -item.geschatte_tijd);
+      const creditSuccess = await PlanningService.updateCredits(item.user_id, -item.geschatte_tijd);
+      if (!creditSuccess) {
+        console.error('⚠️ Credits konden niet worden afgetrokken');
+      }
 
       return true;
     } catch (error) {
