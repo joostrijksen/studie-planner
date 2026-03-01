@@ -80,40 +80,30 @@ function powerUpLabel(kind: PowerUpKind): string {
 // ─── Drawing helpers ──────────────────────────────────────────────────────────
 
 const POWERUP_COLORS: Record<PowerUpKind, { bg: string; border: string }> = {
-  expand:    { bg: '#7c3aed', border: '#a78bfa' }, // paars  – plank langer
-  multiball: { bg: '#b45309', border: '#fcd34d' }, // goud   – 3 ballen
-  slow:      { bg: '#0e7490', border: '#67e8f9' }, // cyaan  – slow
-  life:      { bg: '#be123c', border: '#fda4af' }, // rood   – extra leven
+  expand:    { bg: '#7c3aed', border: '#a78bfa' },
+  multiball: { bg: '#b45309', border: '#fcd34d' },
+  slow:      { bg: '#0e7490', border: '#67e8f9' },
+  life:      { bg: '#be123c', border: '#fda4af' },
 };
 
 function drawPowerUp(ctx: CanvasRenderingContext2D, p: PowerUp) {
   const { bg, border } = POWERUP_COLORS[p.kind];
-
   ctx.save();
-
-  // Glow
   ctx.shadowColor = border;
   ctx.shadowBlur = 8;
-
-  // Achtergrond
   ctx.fillStyle = bg;
   ctx.beginPath();
   ctx.roundRect(p.x, p.y, p.w, p.h, 5);
   ctx.fill();
-
-  // Rand
   ctx.shadowBlur = 0;
   ctx.strokeStyle = border;
   ctx.lineWidth = 2;
   ctx.stroke();
-
-  // Icoon
   ctx.fillStyle = '#ffffff';
   ctx.font = 'bold 14px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(powerUpLabel(p.kind), p.x + p.w / 2, p.y + p.h / 2 + 1);
-
   ctx.restore();
 }
 
@@ -134,7 +124,6 @@ function drawHudBadges(ctx: CanvasRenderingContext2D, canvasW: number, canvasH: 
 
 function drawBrick(ctx: CanvasRenderingContext2D, brick: Brick) {
   const hasPowerUp = !brick.indestructible && brick.dropRoll <= POWERUP_DROP_CHANCE;
-
   ctx.save();
 
   if (brick.indestructible) {
@@ -149,7 +138,6 @@ function drawBrick(ctx: CanvasRenderingContext2D, brick: Brick) {
   ctx.fillRect(brick.x, brick.y, brick.width, brick.height);
   ctx.globalAlpha = 1;
 
-  // Gouden glow-rand voor bonustegels
   if (hasPowerUp) {
     ctx.shadowColor = '#facc15';
     ctx.shadowBlur = 6;
@@ -162,7 +150,6 @@ function drawBrick(ctx: CanvasRenderingContext2D, brick: Brick) {
   ctx.strokeRect(brick.x, brick.y, brick.width, brick.height);
   ctx.shadowBlur = 0;
 
-  // Ster linksonder als bonusindicator
   if (hasPowerUp) {
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'left';
@@ -185,29 +172,32 @@ function drawBrick(ctx: CanvasRenderingContext2D, brick: Brick) {
   ctx.restore();
 }
 
-// ─── Level config factory ─────────────────────────────────────────────────────
+// ─── Level config factory — ONEINDIG ─────────────────────────────────────────
+// Genereert een config voor elk level nummer, oneindig schaalbaar
 
-function buildLevels(count = 20): LevelConfig[] {
-  return Array.from({ length: count }, (_, i) => {
-    const n = i + 1;
-    const speedMul = 1.25 * Math.pow(1.08, n - 1);
-    const rows = 5 + Math.floor((n - 1) / 2);
-    const cols = 9 + Math.floor((n - 1) / 4);
-    const indestructibleChance = n < 3 ? 0 : clamp(0.06 + (n - 3) * 0.01, 0.06, 0.18);
-    const hardRows = n < 2 ? 0 : n < 6 ? 1 : 2;
-    const veryHardRows = n < 4 ? 0 : n < 10 ? 1 : 2;
-    const pattern: LevelConfig['pattern'] =
-      n % 8 === 0 ? 'checker' :
-      n % 5 === 0 ? 'stairs' :
-      n % 3 === 0 ? 'gaps' :
-      'full';
-    return { rows, cols, speedMul, indestructibleChance, hardRows, veryHardRows, pattern };
-  });
+function getLevelConfig(n: number): LevelConfig {
+  // Snelheid stijgt maar heeft een plafond zodat het speelbaar blijft
+  const speedMul = Math.min(3.2, 1.25 * Math.pow(1.07, n - 1));
+
+  // Rijen en kolommen groeien tot een max
+  const rows = Math.min(10, 5 + Math.floor((n - 1) / 2));
+  const cols = Math.min(14, 9 + Math.floor((n - 1) / 4));
+
+  // Onverwoestbare stenen nemen toe
+  const indestructibleChance = n < 3 ? 0 : Math.min(0.28, 0.06 + (n - 3) * 0.012);
+
+  // Hardere stenen (meer hits nodig)
+  const hardRows = n < 2 ? 0 : n < 6 ? 1 : Math.min(3, 2 + Math.floor((n - 6) / 5));
+  const veryHardRows = n < 4 ? 0 : Math.min(3, 1 + Math.floor((n - 4) / 5));
+
+  // Patronen wisselen elke paar levels af
+  const patterns: LevelConfig['pattern'][] = ['full', 'gaps', 'full', 'stairs', 'full', 'checker', 'gaps', 'stairs'];
+  const pattern = patterns[(n - 1) % patterns.length];
+
+  return { rows, cols, speedMul, indestructibleChance, hardRows, veryHardRows, pattern };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
-
-const LEVELS = buildLevels(20);
 
 const PADDLE_BASE_WIDTH = 110;
 const PADDLE_HEIGHT = 10;
@@ -236,7 +226,6 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
   const [levelComplete, setLevelComplete] = useState(false);
   const [gameOver, setGameOver] = useState(false);
 
-  // Refs mirror state for use inside rAF loop
   const pausedRef = useRef(false);
   const levelCompleteRef = useRef(false);
   const gameOverRef = useRef(false);
@@ -245,15 +234,8 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
   useEffect(() => { levelCompleteRef.current = levelComplete; }, [levelComplete]);
   useEffect(() => { gameOverRef.current = gameOver; }, [gameOver]);
 
-  // ── Mutable game state (never triggers re-render) ──────────────────────────
   const g = useRef({
-    paddle: {
-      x: 0,
-      y: 0,
-      width: PADDLE_BASE_WIDTH,
-      height: PADDLE_HEIGHT,
-      speed: PADDLE_SPEED,
-    },
+    paddle: { x: 0, y: 0, width: PADDLE_BASE_WIDTH, height: PADDLE_HEIGHT, speed: PADDLE_SPEED },
     balls: [] as Ball[],
     bricks: [] as Brick[],
     powerUps: [] as PowerUp[],
@@ -268,10 +250,8 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
     gameOverSent: false,
   });
 
-  // ── Level builder ──────────────────────────────────────────────────────────
-
   function createBricks(levelNum: number, canvasWidth: number): Brick[] {
-    const cfg = LEVELS[clamp(levelNum - 1, 0, LEVELS.length - 1)];
+    const cfg = getLevelConfig(levelNum);
     const usableW = canvasWidth - BRICK_OFFSET_LEFT * 2;
     const brickWidth = Math.floor((usableW - (cfg.cols - 1) * BRICK_PADDING) / cfg.cols);
     const bricks: Brick[] = [];
@@ -319,12 +299,10 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
     }
   }
 
-  // ── Ball / paddle setup ────────────────────────────────────────────────────
-
   function resetBalls(levelNum: number, canvasWidth: number, canvasHeight: number) {
-    const cfg = LEVELS[clamp(levelNum - 1, 0, LEVELS.length - 1)];
+    const cfg = getLevelConfig(levelNum);
     const speed = BALL_BASE_SPEED * cfg.speedMul;
-    g.current.levelSpeed = speed; // sla vaste snelheid op
+    g.current.levelSpeed = speed;
     const dir = Math.random() > 0.5 ? 1 : -1;
     g.current.balls = [{
       x: canvasWidth / 2,
@@ -338,34 +316,26 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
   function startLevel(levelNum: number) {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const game = g.current;
     game.currentLevel = levelNum;
     setLevel(levelNum);
-
     game.paddle.x = canvas.width / 2 - game.paddle.width / 2;
     game.paddle.y = canvas.height - 28;
     game.powerUps = [];
     game.bricks = createBricks(levelNum, canvas.width);
-
     resetBalls(levelNum, canvas.width, canvas.height);
-
     setLevelComplete(false);
     levelCompleteRef.current = false;
   }
 
-  // ── Power-up logic ─────────────────────────────────────────────────────────
-
   function maybeSpawnPowerUp(brick: Brick) {
     if (brick.dropRoll > POWERUP_DROP_CHANCE) return;
-
     const r = Math.random();
     const kind: PowerUpKind =
       r < 0.35 ? 'expand' :
       r < 0.62 ? 'multiball' :
       r < 0.84 ? 'slow' :
       'life';
-
     g.current.powerUps.push({
       id: uid(),
       kind,
@@ -380,22 +350,18 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
   function applyPowerUp(kind: PowerUpKind) {
     const game = g.current;
     const now = Date.now();
-
     switch (kind) {
       case 'life':
         game.currentLives += 1;
         setLives(game.currentLives);
         break;
-
       case 'expand':
         game.expandUntil = Math.max(game.expandUntil, now + EXPAND_DURATION);
         game.paddle.width = Math.round(PADDLE_BASE_WIDTH * EXPAND_WIDTH_FACTOR);
         break;
-
       case 'slow':
         game.slowUntil = Math.max(game.slowUntil, now + SLOW_DURATION);
         break;
-
       case 'multiball': {
         const newBalls: Ball[] = [];
         for (const b of game.balls) {
@@ -417,18 +383,13 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
     }
   }
 
-  // ── Main effect: game loop ─────────────────────────────────────────────────
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
     const game = g.current;
 
-    // Initialise
     game.currentScore = 0;
     game.currentLives = 3;
     game.gameOverSent = false;
@@ -445,7 +406,6 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
 
     startLevel(1);
 
-    // ── Input ──────────────────────────────────────────────────────────────
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft')  game.keys.left = true;
       if (e.key === 'ArrowRight') game.keys.right = true;
@@ -458,7 +418,6 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
         });
       }
     };
-
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft')  game.keys.left = false;
       if (e.key === 'ArrowRight') game.keys.right = false;
@@ -467,18 +426,14 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
 
-    // ── rAF loop ───────────────────────────────────────────────────────────
     function step() {
       game.animationId = requestAnimationFrame(step);
-
-      // Guard: canvas/ctx could theoretically unmount
       if (!canvas || !ctx) return;
       if (pausedRef.current || levelCompleteRef.current || gameOverRef.current) return;
 
       const now = Date.now();
       const { width: W, height: H } = canvas;
 
-      // Expire paddle expand
       if (game.expandUntil > 0 && now > game.expandUntil) {
         game.expandUntil = 0;
         game.paddle.width = PADDLE_BASE_WIDTH;
@@ -486,12 +441,10 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
 
       ctx.clearRect(0, 0, W, H);
 
-      // ── Draw bricks ──────────────────────────────────────────────────────
       for (const brick of game.bricks) {
         if (brick.visible) drawBrick(ctx, brick);
       }
 
-      // ── Move & draw paddle ───────────────────────────────────────────────
       if (game.keys.left)  game.paddle.x -= game.paddle.speed;
       if (game.keys.right) game.paddle.x += game.paddle.speed;
       game.paddle.x = clamp(game.paddle.x, 0, W - game.paddle.width);
@@ -499,25 +452,21 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
       ctx.fillStyle = '#3b82f6';
       ctx.fillRect(game.paddle.x, game.paddle.y, game.paddle.width, game.paddle.height);
 
-      // ── Power-ups ────────────────────────────────────────────────────────
       for (const p of game.powerUps) {
         p.y += p.vy;
         drawPowerUp(ctx, p);
-
         const caught =
           p.y + p.h >= game.paddle.y &&
           p.y <= game.paddle.y + game.paddle.height &&
           p.x + p.w >= game.paddle.x &&
           p.x <= game.paddle.x + game.paddle.width;
-
         if (caught) {
           applyPowerUp(p.kind);
-          p.y = H + 999; // remove
+          p.y = H + 999;
         }
       }
       game.powerUps = game.powerUps.filter(p => p.y < H + 50);
 
-      // ── Balls ────────────────────────────────────────────────────────────
       const slowActive = game.slowUntil > now;
       const slowMul = slowActive ? SLOW_MULTIPLIER : 1;
 
@@ -525,7 +474,6 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
         ball.x += ball.dx * slowMul;
         ball.y += ball.dy * slowMul;
 
-        // Wall bounce
         if (ball.x + ball.radius > W || ball.x - ball.radius < 0) {
           ball.dx = -ball.dx;
           ball.x = clamp(ball.x, ball.radius, W - ball.radius);
@@ -535,7 +483,6 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
           ball.y = ball.radius;
         }
 
-        // Paddle bounce
         const hitsPaddle =
           ball.dy > 0 &&
           ball.y + ball.radius >= game.paddle.y &&
@@ -546,21 +493,17 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
         if (hitsPaddle) {
           const hitPos = (ball.x - game.paddle.x) / game.paddle.width;
           const angle = (hitPos - 0.5) * 1.2;
-          const speed = game.levelSpeed; // vaste snelheid per level
+          const speed = game.levelSpeed;
           ball.dx = Math.sin(angle) * speed * 1.8;
           ball.dy = -Math.abs(Math.cos(angle) * speed);
         }
 
-        // Brick collision
         for (const brick of game.bricks) {
           if (!brick.visible) continue;
-
           const inX = ball.x > brick.x && ball.x < brick.x + brick.width;
           const inY = ball.y > brick.y && ball.y < brick.y + brick.height;
-
           if (inX && inY) {
             ball.dy = -ball.dy;
-
             if (!brick.indestructible) {
               brick.hits -= 1;
               if (brick.hits <= 0) {
@@ -574,7 +517,6 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
           }
         }
 
-        // Draw ball
         ctx.beginPath();
         ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
         ctx.fillStyle = '#ef4444';
@@ -582,14 +524,11 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
         ctx.closePath();
       }
 
-      // Remove balls that fell off screen
       game.balls = game.balls.filter(b => b.y - b.radius <= H + 10);
 
-      // ── Life lost ────────────────────────────────────────────────────────
       if (game.balls.length === 0) {
         game.currentLives -= 1;
         setLives(game.currentLives);
-
         if (game.currentLives <= 0) {
           if (!game.gameOverSent) {
             game.gameOverSent = true;
@@ -599,23 +538,23 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
           }
           return;
         }
-
         resetBalls(game.currentLevel, W, H);
       }
 
-      // ── Level complete ───────────────────────────────────────────────────
       const destructible = game.bricks.filter(b => !b.indestructible);
       const levelDone = destructible.length > 0 && destructible.every(b => !b.visible);
 
       if (levelDone) {
-        game.currentScore += 500;
+        // Bonus stijgt met het level nummer
+        const levelBonus = 500 + game.currentLevel * 50;
+        game.currentScore += levelBonus;
         setScore(game.currentScore);
         setLevelComplete(true);
         levelCompleteRef.current = true;
 
         window.setTimeout(() => {
-          const next = game.currentLevel + 1;
-          startLevel(next <= LEVELS.length ? next : 1);
+          // Ga altijd naar het volgende level — oneindig
+          startLevel(game.currentLevel + 1);
         }, 850);
       }
 
@@ -632,13 +571,9 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ─── UI ──────────────────────────────────────────────────────────────────────
-
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
       <div className="bg-white rounded-xl p-6 max-w-4xl w-full mx-4">
-
-        {/* HUD */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-6">
             <span className="text-lg font-bold">Level: {level}</span>
@@ -652,7 +587,6 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
           </button>
         </div>
 
-        {/* Canvas */}
         <canvas
           ref={canvasRef}
           width={800}
@@ -661,17 +595,15 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
           style={{ maxHeight: '70vh' }}
         />
 
-        {/* Status bar */}
         <div className="mt-4 text-center text-sm text-gray-600">
           {paused && '⏸️ GEPAUZEERD | '}
-          {levelComplete && '🎉 LEVEL COMPLETE! +500 | '}
+          {levelComplete && `🎉 LEVEL COMPLETE! +${500 + level * 50} | `}
           {!paused && !levelComplete && '🎮 Gebruik ← → pijltjes | SPATIE = pauze'}
           <div className="mt-1">
             Bonussen: ⬛ plank langer · ◼︎ 3 ballen · ◻︎ slow · ❤️ extra leven
           </div>
         </div>
 
-        {/* Game-over overlay */}
         {gameOver && (
           <div className="mt-4 text-center">
             <div className="text-2xl font-bold text-blue-600 mb-2">Game Over! 🎮</div>
@@ -685,7 +617,6 @@ export default function BreakoutGame({ onGameOver, onClose }: BreakoutGameProps)
             </button>
           </div>
         )}
-
       </div>
     </div>
   );
