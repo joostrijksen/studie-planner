@@ -155,7 +155,9 @@ export default function SpaceInvadersGame({ onGameOver, onClose }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       stateRef.current.keys[e.code] = e.type === 'keydown';
-      if (e.code === 'Space') e.preventDefault();
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        e.preventDefault();
+      }
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKey);
