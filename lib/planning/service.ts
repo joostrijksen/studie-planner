@@ -309,8 +309,8 @@ export class PlanningService {
 
       console.log(`✅ Item ${itemId} gemarkeerd als voltooid, ${item.geschatte_tijd} credits toevoegen`);
 
-      // Schrijf credits bij (1 credit per minuut studietijd)
-      const creditSuccess = await PlanningService.updateCredits(item.user_id, item.geschatte_tijd);
+      // Schrijf 2 credits bij per afgevinkt onderdeel
+      const creditSuccess = await PlanningService.updateCredits(item.user_id, 2);
       if (!creditSuccess) {
         console.error('⚠️ Credits konden niet worden bijgewerkt, maar item is wel afgevinkt');
       }
@@ -359,8 +359,8 @@ export class PlanningService {
 
       console.log(`↩️ Item ${itemId} teruggedraaid, ${item.geschatte_tijd} credits aftrekken`);
 
-      // Trek credits af
-      const creditSuccess = await PlanningService.updateCredits(item.user_id, -item.geschatte_tijd);
+      // Trek 2 credits af
+      const creditSuccess = await PlanningService.updateCredits(item.user_id, -2);
       if (!creditSuccess) {
         console.error('⚠️ Credits konden niet worden afgetrokken');
       }
